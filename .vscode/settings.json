@@ -16,5 +16,6 @@
     "idf.toolsPathWin": "C:\\Users\\stenm\\.espressif",
     "files.associations": {
         "esp_bt.h": "c"
-    }
+    },
+    "idf.flashType": "UART"
 }
