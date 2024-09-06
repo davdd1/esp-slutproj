@@ -1,7 +1,6 @@
 #include "ble_task.h"
 #include "ble_gap.h"
 #include "ble_gatt.h"
-#include "wifi_task.h"
 
 static char *TAG = "BLE Server";
 
@@ -38,7 +37,7 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
     return 0;
 }
 
-void ble_wifi_init()
+void ble_init()
 {
     esp_err_t ret = nvs_flash_init();
     // Intialize NVS
@@ -56,12 +55,5 @@ void ble_wifi_init()
     ble_gatts_add_svcs(gatt_svcs);                   // Initialize NimBLE configuration - queues gatt services.
     ble_hs_cfg.sync_cb = ble_app_on_sync;            // Initialize application
     nimble_port_freertos_init(host_task);            // Run the thread
-    while (1)
-    {
-        if (is_ssid_set && is_pass_set)
-        {
-            wifi_init();
-        }
-        vTaskDelay(1000 / portTICK_PERIOD_MS); // delay 1 sec
-    }
+
 }

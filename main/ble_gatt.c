@@ -1,5 +1,4 @@
 #include "ble_gatt.h"
-#include "wifi_task.h"
 
 static char *TAG = "BLE Server";
 
@@ -24,24 +23,7 @@ const struct ble_gatt_svc_def gatt_svcs[] = {
                 .access_cb = device_notify
             },
             {0}  // End of characteristics array
-        }
-    },
-    {
-        .type = BLE_GATT_SVC_TYPE_PRIMARY,
-        .uuid = BLE_UUID16_DECLARE(0x0185),
-        .characteristics = (struct ble_gatt_chr_def[]) {
-            {
-                .uuid = BLE_UUID16_DECLARE(0x1234),
-                .flags = BLE_GATT_CHR_F_WRITE,
-                .access_cb = device_write_ssid
-            },
-            {
-                .uuid = BLE_UUID16_DECLARE(0x5678),
-                .flags = BLE_GATT_CHR_F_WRITE,
-                .access_cb = device_write_password
-            },
-            {0}  // End of characteristics array
-        }
+        },
     },
     {0}  // End of services array
 };
@@ -79,26 +61,4 @@ int device_notify(uint16_t conn_handle, uint16_t attr_handle)
     struct os_mbuf *om = ble_hs_mbuf_from_flat(&notification_data, sizeof(notification_data));
     ble_gatts_notify_custom(conn_handle, attr_handle, om);
     return 0;
-}
-
-int device_write_ssid(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg)
-{
-    char temp[ctxt->om->om_len + 1];
-    memcpy(temp, ctxt->om->om_data, ctxt->om->om_len);
-    temp[ctxt->om->om_len] = '\0'; // Lägg till null-terminator
-
-    set_wifi_ssid(temp);
-    ESP_LOGI(TAG, "SSID: %s", get_wifi_ssid());
-    return 1;
-}
-
-int device_write_password(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg)
-{
-    char temp[ctxt->om->om_len + 1];
-    memcpy(temp, ctxt->om->om_data, ctxt->om->om_len);
-    temp[ctxt->om->om_len] = '\0'; // Lägg till null-terminator
-
-    set_wifi_password(temp);
-    ESP_LOGI(TAG, "Password: %s", get_wifi_password());
-    return 1;
 }

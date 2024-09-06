@@ -18,6 +18,6 @@
 #include "driver/gpio.h"
 
 int ble_gap_event(struct ble_gap_event *event, void *arg);
-void ble_wifi_init();
+void ble_init();
 
 #endif

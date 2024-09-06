@@ -4,5 +4,5 @@
 
 void app_main(void)
 {
-    ble_wifi_init(); // Start program, initialize BLE and listen for WiFi credentials
+    ble_init(); // Start program, initialize BLE and listen for WiFi credentials
 }
