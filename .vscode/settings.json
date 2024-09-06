@@ -15,7 +15,11 @@
     "idf.pythonBinPathWin": "C:\\Users\\stenm\\.espressif\\python_env\\idf5.1_py3.11_env\\Scripts\\python.exe",
     "idf.toolsPathWin": "C:\\Users\\stenm\\.espressif",
     "files.associations": {
-        "esp_bt.h": "c"
+        "esp_bt.h": "c",
+        "nvs_flash.h": "c",
+        "task.h": "c",
+        "ble_svc_gatt.h": "c",
+        "gpio.h": "c"
     },
     "idf.flashType": "UART"
 }
