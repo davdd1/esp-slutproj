@@ -17,7 +17,10 @@
 #include "sdkconfig.h"
 #include "driver/gpio.h"
 
+extern uint8_t ble_addr_type;
+
 int ble_gap_event(struct ble_gap_event *event, void *arg);
+void ble_scan(void);
 void ble_init();
 
 #endif

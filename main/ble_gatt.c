@@ -2,33 +2,6 @@
 
 static char *TAG = "BLE Server";
 
-const struct ble_gatt_svc_def gatt_svcs[] = {
-    {
-        .type = BLE_GATT_SVC_TYPE_PRIMARY,  // Type of service
-        .uuid = BLE_UUID16_DECLARE(0x0180),
-        .characteristics = (struct ble_gatt_chr_def[]) {
-            {
-                .uuid = BLE_UUID16_DECLARE(0xFEF4),
-                .flags = BLE_GATT_CHR_F_READ,
-                .access_cb = device_read
-            },
-            {
-                .uuid = BLE_UUID16_DECLARE(0xDEAD),
-                .flags = BLE_GATT_CHR_F_WRITE,
-                .access_cb = device_write
-            },
-            {
-                .uuid = BLE_UUID16_DECLARE(0xAEED),
-                .flags = BLE_GATT_CHR_F_NOTIFY,
-                .access_cb = device_notify
-            },
-            {0}  // End of characteristics array
-        },
-    },
-    {0}  // End of services array
-};
-
-
 int device_write(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
     char temp[ctxt->om->om_len + 1];

@@ -21,5 +21,4 @@ int device_write(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_acc
 int device_read(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
 int device_notify(uint16_t conn_handle, uint16_t attr_handle);
 
-extern const struct ble_gatt_svc_def gatt_svcs[];
 #endif
