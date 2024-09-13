@@ -1,3 +1,4 @@
+#include "ble_gatt.h"
 #include "sensor.h"
 #include "ds18b20.h"
 #include "onewire_bus.h"
@@ -78,12 +79,16 @@ float get_temp() {
     return temperature;
 }
 
-// Task to get temperature from sensor
+// Task to get temperature from sensor to send to server
 void sensor_task(void *pvParameter) {
     while (1) {
         temperature = get_temp();
+        int ret = send_data_to_hub((int)temperature);  // Send the temperature value to the server
+        if (ret != 0) {
+            ESP_LOGE(tag, "Failed to send data to server");
+        }
         // Log the temperature value in celcius
-        ESP_LOGI(tag, "Temperature: %.2f °C", temperature);
+        ESP_LOGI(tag, "Temperature: %d °C", (int)temperature);
         vTaskDelay(8000 / portTICK_PERIOD_MS);
     }
 }
