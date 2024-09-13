@@ -1,4 +1,5 @@
 #include "ble_gatt.h"
+#include "sensor.h"
 
 static char *TAG = "BLE Server";
 
@@ -23,8 +24,6 @@ int device_write(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_acc
 
 int device_read(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
-    char *value_string = "Sensor Value: ";
-    os_mbuf_append(ctxt->om, value_string, strlen(value_string));
     return 0;
 }
 

@@ -19,7 +19,15 @@
         "nvs_flash.h": "c",
         "task.h": "c",
         "ble_svc_gatt.h": "c",
-        "gpio.h": "c"
+        "gpio.h": "c",
+        "onewire_device.h": "c",
+        "onewire_types.h": "c",
+        "future": "c",
+        "istream": "c",
+        "ostream": "c",
+        "system_error": "c",
+        "onewire_bus.h": "c",
+        "ds18b20.h": "c"
     },
     "idf.flashType": "UART"
 }
