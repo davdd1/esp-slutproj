@@ -4,6 +4,7 @@
 #include "wifi_task.h"
 
 static char *TAG = "BLE Server";
+bool is_connected = false;
 
 int ble_gap_event(struct ble_gap_event *event, void *arg)
 {
@@ -11,26 +12,20 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
     {
     // Advertise if connected
     case BLE_GAP_EVENT_CONNECT:
-        ESP_LOGI(TAG, "BLE GAP EVENT CONNECTION %s", event->connect.status == 0 ? "OK" : "FAILED");
+        ESP_LOGI(TAG, "BLE GAP EVENT CONNECTION %s", event->connect.status == 0 ? "OK :)" : "FAILED :(");
 
         if (event->connect.status != 0)
         {
             ble_app_advertise();
+        } else {
+            is_connected = true;
         }
         break;
         // Advertise again
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "DEVICE DISCONNECTED. RESTARTING ADVERTISING");
+        is_connected = false;
         ble_app_advertise();
-        break;
-    case BLE_GAP_EVENT_SUBSCRIBE:
-        ESP_LOGI(TAG, "GRATTIS GUBBEN! NY SUB: Attr handle: %d", event->subscribe.attr_handle);
-        if (event->subscribe.cur_notify)
-        {
-            ESP_LOGI(TAG, "NOTIFICATION ENABLED");
-            device_notify(event->subscribe.conn_handle, event->subscribe.attr_handle);
-            break;
-        }
         break;
     default:
         break;
@@ -49,7 +44,7 @@ void ble_wifi_init()
     }
     ESP_ERROR_CHECK(ret);                            // Check if NVS intialization is successful
     nimble_port_init();                              // Initialize the host stack
-    ble_svc_gap_device_name_set("Daves BLE-Server"); // Initialize NimBLE configuration - server name
+    ble_svc_gap_device_name_set("Dave Ble"); // Initialize NimBLE configuration - server name
     ble_svc_gap_init();                              // Initialize NimBLE configuration - gap service
     ble_svc_gatt_init();                             // Initialize NimBLE configuration - gatt service
     ble_gatts_count_cfg(gatt_svcs);                  // Initialize NimBLE configuration - config gatt services
