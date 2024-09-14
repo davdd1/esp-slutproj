@@ -1,4 +1,4 @@
-#include "ble_gap.h"
+#include "hub_ble_gap.h"
 
 static char* TAG = "BLE Server";
 uint8_t ble_addr_type;

@@ -1,0 +1,500 @@
+
+
+================================================================================
+File: .\collect_files.py
+================================================================================
+
+import os
+import argparse
+
+def main():
+    parser = argparse.ArgumentParser(description='Concatenate all programming files into a single text file.')
+    parser.add_argument('-d', '--directory', default='.', help='Root directory to scan')
+    parser.add_argument('-o', '--output', default='all_programming_files.txt', help='Output file name')
+    parser.add_argument('-e', '--extensions', nargs='+', help='List of file extensions to include', default=[
+        '.py', '.java', '.c', '.cpp', '.h', '.js', '.rb', '.php', '.go', '.cs', '.swift', '.kt',
+        '.html', '.css', '.ts', '.sql', '.json', '.xml', '.sh', '.pl', '.r', '.m', '.erl', '.ex',
+        '.exs', '.scala', '.lhs', '.hs', '.ml', '.fs', '.fsx'
+    ])
+    parser.add_argument('-x', '--exclude', nargs='+', help='List of file extensions to exclude', default=[])
+
+    args = parser.parse_args()
+
+    programming_extensions = args.extensions
+    exclude_extensions = args.exclude
+    output_file = args.output
+    root_dir = args.directory
+
+    # Define directories to ignore
+    ignore_dirs = {'.vscode', '.devcontainer', 'build'}
+
+    with open(output_file, 'w', encoding='utf-8') as outfile:
+        for dirpath, dirnames, filenames in os.walk(root_dir):
+            # Modify dirnames in-place to skip ignored directories
+            dirnames[:] = [d for d in dirnames if d not in ignore_dirs]
+
+            for filename in filenames:
+                # Check if file has an allowed extension and is not in the exclude list
+                if (any(filename.endswith(ext) for ext in programming_extensions) and
+                    not any(filename.endswith(ext) for ext in exclude_extensions)):
+                    file_path = os.path.join(dirpath, filename)
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as infile:
+                            content = infile.read()
+                        outfile.write(f"\n\n{'='*80}\n")
+                        outfile.write(f"File: {file_path}\n")
+                        outfile.write(f"{'='*80}\n\n")
+                        outfile.write(content)
+                    except Exception as e:
+                        print(f"Error reading {file_path}: {e}")
+
+if __name__ == '__main__':
+    main()
+
+
+================================================================================
+File: .\main\ble_gap.c
+================================================================================
+
+#include "ble_gap.h"
+
+static char* TAG = "BLE Server";
+uint8_t ble_addr_type;
+
+// Define BLE Connection
+void ble_app_advertise()
+{
+
+    // GAP - Device name def
+    struct ble_hs_adv_fields adv_fields;
+    const char *device_name;
+    memset(&adv_fields, 0, sizeof(adv_fields));
+    device_name = ble_svc_gap_device_name();
+    adv_fields.name = (uint8_t *)device_name;
+    adv_fields.name_len = strlen(device_name);
+    adv_fields.name_is_complete = 1;
+    ble_gap_adv_set_fields(&adv_fields);
+
+    // GAP - Device Connectivity def
+    struct ble_gap_adv_params adv_params;
+    memset(&adv_params, 0, sizeof(adv_params));
+    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
+    adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+    ble_gap_adv_start(ble_addr_type, NULL, BLE_HS_FOREVER, &adv_params, ble_gap_event, NULL);
+}
+
+void ble_app_on_sync(void)
+{
+    ble_hs_id_infer_auto(0, &ble_addr_type);
+    ble_app_advertise();
+}
+
+void host_task(void *params)
+{
+    nimble_port_run();
+}
+
+================================================================================
+File: .\main\ble_gap.h
+================================================================================
+
+#ifndef BLE_GAP_H
+#define BLE_GAP_H
+
+#include <stdio.h>
+#include <stdint.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/event_groups.h"
+#include "esp_event.h"
+#include "nvs_flash.h"
+#include "esp_log.h"
+#include "nimble/nimble_port.h"
+#include "nimble/nimble_port_freertos.h"
+#include "host/ble_hs.h"
+#include "services/gap/ble_svc_gap.h"
+#include "services/gatt/ble_svc_gatt.h"
+#include "sdkconfig.h"
+#include "driver/gpio.h"
+
+int ble_gap_event(struct ble_gap_event *event, void *arg);
+void ble_app_advertise();
+void ble_app_on_sync(void);
+void host_task(void *params);
+
+#endif
+
+================================================================================
+File: .\main\ble_gatt.c
+================================================================================
+
+#include "ble_gatt.h"
+#include "wifi_task.h"
+
+static char *TAG = "BLE Server";
+
+const struct ble_gatt_svc_def gatt_svcs[] = {
+    {
+        .type = BLE_GATT_SVC_TYPE_PRIMARY,  // Type of service
+        .uuid = BLE_UUID16_DECLARE(0x0180),
+        .characteristics = (struct ble_gatt_chr_def[]) {
+            {
+                .uuid = BLE_UUID16_DECLARE(0x1234),
+                .flags = BLE_GATT_CHR_F_READ,
+                .access_cb = device_read
+            },
+            {
+                .uuid = BLE_UUID16_DECLARE(0x5678),
+                .flags = BLE_GATT_CHR_F_WRITE, BLE_GATT_CHR_PROP_WRITE,
+                .access_cb = device_write
+            },
+            {0}  // End of characteristics array
+        }
+    },
+    {
+        .type = BLE_GATT_SVC_TYPE_PRIMARY,
+        .uuid = BLE_UUID16_DECLARE(0x0185),
+        .characteristics = (struct ble_gatt_chr_def[]) {
+            {
+                .uuid = BLE_UUID16_DECLARE(0x1234),
+                .flags = BLE_GATT_CHR_F_WRITE,
+                .access_cb = device_write_ssid
+            },
+            {
+                .uuid = BLE_UUID16_DECLARE(0x5678),
+                .flags = BLE_GATT_CHR_F_WRITE,
+                .access_cb = device_write_password
+            },
+            {0}  // End of characteristics array
+        }
+    },
+    {0}  // End of services array
+};
+
+
+int device_write(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    ESP_LOGI("BLE_GATT", "Write operation on attribute handle: %d", attr_handle);
+    char temp[ctxt->om->om_len + 1];
+    memcpy(temp, ctxt->om->om_data, ctxt->om->om_len);
+    temp[ctxt->om->om_len] = '\0'; // Lägg till null-terminator
+
+    ESP_LOGI(TAG, "Received: %s", temp);
+    return 0;
+}
+
+int device_read(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    ESP_LOGI("BLE_GATT", "Read operation on attribute handle: %d", attr_handle);
+    char *value_string = "Sensor Temperature: ";
+    os_mbuf_append(ctxt->om, value_string, strlen(value_string));
+    return 0;
+}
+
+int device_write_ssid(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    char temp[ctxt->om->om_len + 1];
+    memcpy(temp, ctxt->om->om_data, ctxt->om->om_len);
+    temp[ctxt->om->om_len] = '\0'; // Lägg till null-terminator
+
+    set_wifi_ssid(temp);
+    ESP_LOGI(TAG, "SSID: %s", get_wifi_ssid());
+    return 1;
+}
+
+int device_write_password(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    char temp[ctxt->om->om_len + 1];
+    memcpy(temp, ctxt->om->om_data, ctxt->om->om_len);
+    temp[ctxt->om->om_len] = '\0'; // Lägg till null-terminator
+
+    set_wifi_password(temp);
+    ESP_LOGI(TAG, "Password: %s", get_wifi_password());
+    return 1;
+}
+
+
+================================================================================
+File: .\main\ble_gatt.h
+================================================================================
+
+#ifndef BLE_GATT_H
+#define BLE_GATT_H
+
+#include <stdio.h>
+#include <stdint.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/event_groups.h"
+#include "esp_event.h"
+#include "nvs_flash.h"
+#include "esp_log.h"
+#include "nimble/nimble_port.h"
+#include "nimble/nimble_port_freertos.h"
+#include "host/ble_hs.h"
+#include "services/gap/ble_svc_gap.h"
+#include "services/gatt/ble_svc_gatt.h"
+#include "sdkconfig.h"
+#include "driver/gpio.h"
+
+int device_write(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
+int device_read(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
+int device_notify(uint16_t conn_handle, uint16_t attr_handle);
+int device_write_ssid(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
+int device_write_password(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
+
+extern const struct ble_gatt_svc_def gatt_svcs[];
+#endif
+
+================================================================================
+File: .\main\ble_task.c
+================================================================================
+
+#include "ble_task.h"
+#include "ble_gap.h"
+#include "ble_gatt.h"
+#include "wifi_task.h"
+
+static char *TAG = "BLE Server";
+bool is_connected = false;
+
+int ble_gap_event(struct ble_gap_event *event, void *arg)
+{
+    switch (event->type)
+    {
+    // Advertise if connected
+    case BLE_GAP_EVENT_CONNECT:
+        ESP_LOGI(TAG, "BLE GAP EVENT CONNECTION %s", event->connect.status == 0 ? "OK :)" : "FAILED :(");
+
+        if (event->connect.status != 0)
+        {
+            ble_app_advertise();
+        } else {
+            is_connected = true;
+        }
+        break;
+        // Advertise again
+    case BLE_GAP_EVENT_DISCONNECT:
+        ESP_LOGI(TAG, "DEVICE DISCONNECTED. RESTARTING ADVERTISING");
+        is_connected = false;
+        ble_app_advertise();
+        break;
+    default:
+        break;
+    }
+    return 0;
+}
+
+void ble_wifi_init()
+{
+    esp_err_t ret = nvs_flash_init();
+    // Intialize NVS
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);                            // Check if NVS intialization is successful
+    nimble_port_init();                              // Initialize the host stack
+    ble_svc_gap_device_name_set("Dave Ble"); // Initialize NimBLE configuration - server name
+    ble_svc_gap_init();                              // Initialize NimBLE configuration - gap service
+    ble_svc_gatt_init();                             // Initialize NimBLE configuration - gatt service
+    ble_gatts_count_cfg(gatt_svcs);                  // Initialize NimBLE configuration - config gatt services
+    ble_gatts_add_svcs(gatt_svcs);                   // Initialize NimBLE configuration - queues gatt services.
+    ble_hs_cfg.sync_cb = ble_app_on_sync;            // Initialize application
+    nimble_port_freertos_init(host_task);            // Run the thread
+    while (1)
+    {
+        if (is_ssid_set && is_pass_set)
+        {
+            wifi_init();
+        }
+        vTaskDelay(1000 / portTICK_PERIOD_MS); // delay 1 sec
+    }
+}
+
+================================================================================
+File: .\main\ble_task.h
+================================================================================
+
+#ifndef BLE_TASK_H
+#define BLE_TASK_H
+
+#include <stdio.h>
+#include <stdint.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/event_groups.h"
+#include "esp_event.h"
+#include "nvs_flash.h"
+#include "esp_log.h"
+#include "nimble/nimble_port.h"
+#include "nimble/nimble_port_freertos.h"
+#include "host/ble_hs.h"
+#include "services/gap/ble_svc_gap.h"
+#include "services/gatt/ble_svc_gatt.h"
+#include "sdkconfig.h"
+#include "driver/gpio.h"
+
+int ble_gap_event(struct ble_gap_event *event, void *arg);
+void ble_wifi_init();
+
+#endif
+
+================================================================================
+File: .\main\main.c
+================================================================================
+
+#include "ble_gap.h"
+#include "ble_gatt.h"
+#include "ble_task.h"
+#include "driver/gpio.h"
+
+void app_main(void)
+{
+    ble_wifi_init(); // Start program, initialize BLE and listen for WiFi credentials
+}
+
+================================================================================
+File: .\main\wifi_task.c
+================================================================================
+
+#include "wifi_task.h"
+#include <stdbool.h>
+
+bool is_ssid_set = false;
+bool is_pass_set = false;
+bool has_wifi_init = false;
+
+wifi_config_t wifi_config = {
+    .sta = {
+        .ssid = {0},
+        .password = {0},
+        .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+    },
+};
+
+void wifi_init()
+{
+    static esp_netif_t* netif = NULL;
+    // if first time, initialize NVS
+    if (!has_wifi_init)
+    {
+
+        ESP_ERROR_CHECK(esp_netif_init());
+        ESP_ERROR_CHECK(esp_event_loop_create_default());
+        netif = esp_netif_create_default_wifi_sta();
+        if (netif == NULL)
+        {
+            ESP_LOGE("WIFI", "Failed to create default wifi netif");
+            return;
+        }
+
+        wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+
+        ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
+        ESP_ERROR_CHECK(esp_wifi_start());
+
+        has_wifi_init = true;
+    }
+    else
+    {
+        ESP_LOGI("WIFI", "Disconnecting...");
+        esp_wifi_disconnect();
+        ESP_LOGI("WIFI", "Setting new config...");
+        ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
+    }
+
+    ESP_LOGI("WIFI", "SSID: %s", wifi_config.sta.ssid);
+    ESP_LOGI("WIFI", "Password: %s", wifi_config.sta.password);
+
+    ESP_ERROR_CHECK(esp_wifi_connect());
+
+    esp_netif_ip_info_t ip_info;
+    int retries = 0;
+    const int max_retries = 10;
+
+    // wait for connection
+    while (retries < max_retries)
+    {
+        ESP_ERROR_CHECK(esp_netif_get_ip_info(netif, &ip_info));
+        if (ip_info.ip.addr != 0)
+        {
+            ESP_LOGI("WIFI", "IP Address: " IPSTR, IP2STR(&ip_info.ip));
+            ESP_LOGI("WIFI", "Subnet mask: " IPSTR, IP2STR(&ip_info.netmask));
+            ESP_LOGI("WIFI", "Gateway: " IPSTR, IP2STR(&ip_info.gw));
+            is_ssid_set = false;
+            is_pass_set = false;
+            break;
+        }
+        ESP_LOGI("WIFI", "Waiting for IP... %d", retries);
+        vTaskDelay(pdMS_TO_TICKS(1000)); // wait 1 sec
+        retries++;
+    }
+
+    if (retries >= max_retries)
+    {
+        ESP_LOGE("WIFI", "Failed to connect to AP after %d retries", max_retries);
+    }
+    // LOGGA
+}
+
+void set_wifi_ssid(const char *ssid)
+{
+    strncpy((char *)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid));
+    is_ssid_set = true;
+}
+
+void set_wifi_password(const char *password)
+{
+    strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password));
+    is_pass_set = true;
+}
+
+const char *get_wifi_ssid()
+{
+    return (const char *)wifi_config.sta.ssid;
+}
+
+const char *get_wifi_password()
+{
+    return (const char *)wifi_config.sta.password;
+}
+
+================================================================================
+File: .\main\wifi_task.h
+================================================================================
+
+#ifndef WIFI_TASK_H
+#define WIFI_TASK_H
+
+#include <string.h>
+#include <stdbool.h>
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_netif.h"
+#include "esp_log.h"
+#include "nvs_flash.h"
+#include "sdkconfig.h"
+
+extern bool is_ssid_set;
+extern bool is_pass_set;
+extern bool has_wifi_init;
+extern wifi_config_t wifi_config;
+
+void wifi_init();
+void set_wifi_ssid(const char* ssid);
+void set_wifi_password(const char* password);
+const char* get_wifi_ssid();
+const char* get_wifi_password();
+
+#endif
+
+================================================================================
+File: .\main\go\tcp_server.go
+================================================================================
+
+package main
+

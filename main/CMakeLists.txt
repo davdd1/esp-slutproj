@@ -1,2 +1,2 @@
-idf_component_register(SRCS "wifi_task.c" "ble_gatt.c" "ble_gap.c" "ble_task.c" "main.c"
+idf_component_register(SRCS "hub_main.c" "hub_ble_gatt.c" "hub_ble_gap.c" "wifi_task.c" "ble_task.c"
                     INCLUDE_DIRS ".")

@@ -1,5 +1,5 @@
-#include "ble_gap.h"
-#include "ble_gatt.h"
+#include "hub_ble_gap.h"
+#include "hub_ble_gatt.h"
 #include "ble_task.h"
 #include "driver/gpio.h"
 
