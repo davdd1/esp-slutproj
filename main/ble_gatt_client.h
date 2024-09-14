@@ -1,5 +1,5 @@
-#ifndef BLE_GATT_H
-#define BLE_GATT_H
+#ifndef BLE_GATT_CLIENT_H
+#define BLE_GATT_CLIENT_H
 
 #include <stdio.h>
 #include <stdint.h>
@@ -19,9 +19,6 @@
 #include "sdkconfig.h"
 #include "driver/gpio.h"
 #include "arpa/inet.h"
-#include "host/ble_hs.h"
-
-
 
 extern bool has_found_svc;
 
@@ -33,13 +30,15 @@ typedef struct {
     uint16_t conn_handle;
 } ble_device_info_t;
 
+extern ble_device_info_t *hub_device;
+
 void init_ble_device();
 
 int disc_chrs(uint16_t conn_handle, const struct ble_gatt_error *error, const struct ble_gatt_chr *characteristic, void *arg);
 
 int disc_svcs(uint16_t conn_handle, const struct ble_gatt_error *error, const struct ble_gatt_svc *service, void *arg);
 
-int send_data_to_hub(int sensor_temperature);
+int send_data_to_hub(float sensor_temperature);
 
 #endif
 

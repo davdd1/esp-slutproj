@@ -28,7 +28,14 @@
         "system_error": "c",
         "onewire_bus.h": "c",
         "ds18b20.h": "c",
-        "ble_hs.h": "c"
+        "ble_hs.h": "c",
+        "ble_esp_gap.h": "c",
+        "ble_esp_gatt.h": "c",
+        "ble_gatt.h": "c",
+        "ble_gatt_client.h": "c",
+        "ble_gap.h": "c",
+        "ds18b20_sensor.h": "c",
+        "sdkconfig.h": "c"
     },
     "idf.flashType": "UART"
 }

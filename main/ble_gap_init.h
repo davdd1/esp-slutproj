@@ -1,5 +1,5 @@
-#ifndef BLE_TASK_H
-#define BLE_TASK_H
+#ifndef BLE_GAP_INIT_H
+#define BLE_GAP_INIT_H
 
 #include <stdio.h>
 #include <stdint.h>
@@ -16,11 +16,10 @@
 #include "services/gatt/ble_svc_gatt.h"
 #include "sdkconfig.h"
 #include "driver/gpio.h"
+#include "host/ble_gap.h"
+#include "host/ble_gatt.h"
 
-extern uint8_t ble_addr_type;
-
-int ble_gap_event(struct ble_gap_event *event, void *arg);
-void ble_scan(void);
-void ble_init();
+void ble_app_on_sync(void);
+void host_task(void *params);
 
 #endif

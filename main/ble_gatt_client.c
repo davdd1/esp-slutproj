@@ -1,5 +1,5 @@
-#include "ble_gatt.h"
-#include "sensor.h"
+#include "ble_gatt_client.h"
+#include "ds18b20_sensor.h"
 
 #define HUB_READ_CHAR_UUID 0x1234
 #define HUB_WRITE_CHAR_UUID 0x5678
@@ -8,7 +8,7 @@
 #define MAX_RETRY_COUNT 5
 #define INITIAL_RETRY_DELAY_MS 100
 
-static char *TAG = "BLE Server";
+static char *TAG = "BLE_GATT_CLIENT";
 
 ble_device_info_t *hub_device;
 bool has_found_all_chrs = false;
@@ -21,10 +21,12 @@ void init_ble_device()
     if (hub_device == NULL)
     {
         ESP_LOGE(TAG, "Failed to allocate memory for hub device");
+        return;
     }
     else
     {
         ESP_LOGI(TAG, "Allocated memory for hub device");
+        hub_device->conn_handle = BLE_HS_CONN_HANDLE_NONE;
     }
 }
 
@@ -122,23 +124,23 @@ void write_cb(uint16_t conn_handle, const struct ble_gatt_error *error, struct b
 }
 
 // write to hub
-int send_data_to_hub(int sensor_temperature)
+int send_data_to_hub(float sensor_temperature)
 {
     ESP_LOGI(TAG, "IN SEND TO HUB FUNCTION");
     //  if WRITE_CHAR_HANDLE is not 0
     if (hub_device->write_char_handle != 0)
     {
-        ESP_LOGI(TAG, "Temperature: %d °C", sensor_temperature);
+        ESP_LOGI(TAG, "Temperature: %f °C", sensor_temperature);
         // print all device info field for debug
         ESP_LOGI(TAG, "Service UUID: %x", hub_device->service_uuid);
         ESP_LOGI(TAG, "Read Char Handle: %d", hub_device->read_char_handle);
         ESP_LOGI(TAG, "Write Char Handle: %d", hub_device->write_char_handle);
         ESP_LOGI(TAG, "Conn Handle: %d", hub_device->conn_handle);
+
         // write to hub
-        int temp_data = 23;
 
         // Ensure the connection and handles are valid before attempting to write
-        if (hub_device->conn_handle == 0)
+        if (hub_device->conn_handle == BLE_HS_CONN_HANDLE_NONE)
         {
             ESP_LOGE(TAG, "Invalid connection handle");
             return -1;
@@ -150,29 +152,18 @@ int send_data_to_hub(int sensor_temperature)
             return -1;
         }
 
-        int retry_count = 0;
-        int retry_delay = INITIAL_RETRY_DELAY_MS;
-        int ret;
+        //convert temperature to string
+        char temp_buffer[10];
+        snprintf(temp_buffer, sizeof(temp_buffer), "%.2f", sensor_temperature);
 
-        do
-        {
-            vTaskDelay(pdMS_TO_TICKS(retry_delay));
-            ret = ble_gattc_write_flat(hub_device->conn_handle, hub_device->write_char_handle,
-                                       &temp_data, (uint16_t)sizeof(temp_data), write_cb, NULL);
-            if (ret != 0)
-            {
-                ESP_LOGW(TAG, "Write failed, retrying... (attempt %d, error %d)", retry_count + 1, ret);
-                retry_delay *= 2; // Exponential backoff
-            }
-            retry_count++;
-        } while (ret != 0 && retry_count < MAX_RETRY_COUNT);
 
+        int ret = ble_gattc_write_flat(hub_device->conn_handle, hub_device->write_char_handle,
+                                       temp_buffer, strlen(temp_buffer), write_cb, NULL);
         if (ret != 0)
         {
-            ESP_LOGE(TAG, "Write failed after %d attempts: %d", MAX_RETRY_COUNT, ret);
+            ESP_LOGE(TAG, "Write failed: %d", ret);
             return -1;
         }
-
     }
     return 0;
 }

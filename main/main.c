@@ -1,11 +1,10 @@
-#include "ble_gap.h"
-#include "ble_gatt.h"
-#include "ble_task.h"
-#include "sensor.h"
+#include "ble_gap_init.h"
+#include "ble_gatt_client.h"
+#include "ble_event_task.h"
+#include "ds18b20_sensor.h"
 
 void app_main(void)
 {
-    ble_init(); // Start program, initialize BLE and listen for WiFi credentials
     init_ble_device();
-
+    ble_init(); // Start program, initialize BLE and listen for WiFi credentials
 }

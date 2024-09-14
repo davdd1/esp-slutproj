@@ -1,5 +1,5 @@
-#ifndef SENSOR_H
-#define SENSOR_H
+#ifndef DS18B20_SENSOR_H
+#define DS18B20_SENSOR_H
 
 #include "esp_err.h"
 

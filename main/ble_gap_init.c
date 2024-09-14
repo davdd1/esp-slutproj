@@ -1,5 +1,5 @@
-#include "ble_gap.h"
-#include "ble_task.h"
+#include "ble_gap_init.h"
+#include "ble_event_task.h"
 
 static char* TAG = "BLE Server";
 

@@ -1,7 +1,7 @@
-#include "ble_task.h"
-#include "ble_gap.h"
-#include "ble_gatt.h"
-#include "sensor.h"
+#include "ble_event_task.h"
+#include "ble_gatt_client.h"
+#include "ble_gap_init.h"
+#include "ds18b20_sensor.h"
 
 static char *TAG = "BLE Server";
 uint8_t ble_addr_type;
@@ -54,7 +54,7 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
                 ESP_LOGE(TAG, "Connection failed!: %d", ret);
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(100));
+        //vTaskDelay(pdMS_TO_TICKS(100));
         break;
 
     case BLE_GAP_EVENT_CONNECT:
@@ -67,13 +67,13 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
                 ESP_LOGI(TAG, "Service already found, skipping...");
                 return 0;
             }
+            if (hub_device != NULL) {
+                 hub_device->conn_handle = event->connect.conn_handle;
+            }
             ESP_LOGI(TAG, "Discovering services KANSKE FELLLLL...");
             ble_gattc_disc_all_svcs(event->connect.conn_handle, disc_svcs, NULL);
-            //if connection is successful, start sending sensor data to server
-            if (event->connect.status == 0)
-            {
-                xTaskCreate(sensor_task, "sensor_task", 2048, NULL, 5, NULL);
-            }
+            
+            xTaskCreate(sensor_task, "sensor_task", 2048, NULL, 5, NULL); // start sensor task
         }
         else
         {

@@ -1,5 +1,5 @@
-#include "ble_gatt.h"
-#include "sensor.h"
+#include "ble_gatt_client.h"
+#include "ds18b20_sensor.h"
 #include "ds18b20.h"
 #include "onewire_bus.h"
 #include "onewire_bus_impl_rmt.h"
@@ -30,15 +30,22 @@ esp_err_t init_sensor() {
     onewire_bus_rmt_config_t rmt_config = {
         .max_rx_bytes = 10,  // 1byte ROM command + 8byte ROM number + 1byte device command
     };
-    ESP_ERROR_CHECK(onewire_new_bus_rmt(&bus_config, &rmt_config, &bus));
-
+    esp_err_t err = onewire_new_bus_rmt(&bus_config, &rmt_config, &bus);
+    if (err != ESP_OK) {
+        ESP_LOGE(tag, "Failed to install 1-wire bus");
+        return err;
+    }
     // Create 1-wire device iterator for device search
     onewire_device_iter_handle_t iter = NULL;
     onewire_device_t next_onewire_device;
     esp_err_t search_result = ESP_OK;
 
-    ESP_ERROR_CHECK(onewire_new_device_iter(bus, &iter));
-    
+    esp_err_t err2 = onewire_new_device_iter(bus, &iter);
+    if (err2 != ESP_OK) {
+        ESP_LOGE(tag, "Failed to create device iterator");
+        return err2;
+    }
+
     // Search for DS18B20 device
     while ((search_result = onewire_device_iter_get_next(iter, &next_onewire_device)) == ESP_OK) {
         ds18b20_config_t ds_cfg = {};
@@ -49,7 +56,11 @@ esp_err_t init_sensor() {
         }
     }
 
-    ESP_ERROR_CHECK(onewire_del_device_iter(iter));
+    esp_err_t err3 = onewire_del_device_iter(iter);
+    if (err3 != ESP_OK) {
+        ESP_LOGE(tag, "Failed to delete device iterator");
+        return err3;
+    }
 
     if (ds18b20 == NULL) {
         ESP_LOGE(tag, "Failed to initialize DS18B20 sensor");
@@ -71,10 +82,20 @@ float get_temp() {
     }
 
     // Trigger temperature conversion
-    ESP_ERROR_CHECK(ds18b20_trigger_temperature_conversion(ds18b20));
+    esp_err_t err4 = ds18b20_trigger_temperature_conversion(ds18b20);
+    if (err4 != ESP_OK) {
+        ESP_LOGE(tag, "Failed to trigger temperature conversion");
+        return -1.0;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(1000));  // Delay for conversion to complete
 
     // Get the temperature value
-    ESP_ERROR_CHECK(ds18b20_get_temperature(ds18b20, &temperature));
+    esp_err_t err5 = ds18b20_get_temperature(ds18b20, &temperature);
+    if (err5 != ESP_OK) {
+        ESP_LOGE(tag, "Failed to get temperature");
+        return -5.0;
+    }
 
     return temperature;
 }
@@ -83,12 +104,12 @@ float get_temp() {
 void sensor_task(void *pvParameter) {
     while (1) {
         temperature = get_temp();
-        int ret = send_data_to_hub((int)temperature);  // Send the temperature value to the server
+        int ret = send_data_to_hub(temperature);  // Send the temperature value to the server
         if (ret != 0) {
             ESP_LOGE(tag, "Failed to send data to server");
         }
         // Log the temperature value in celcius
-        ESP_LOGI(tag, "Temperature: %d °C", (int)temperature);
+        ESP_LOGI(tag, "Temperature: %.2f °C", temperature);
         vTaskDelay(8000 / portTICK_PERIOD_MS);
     }
 }
