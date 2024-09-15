@@ -8,6 +8,23 @@ uint8_t ble_addr_type;
 
 static uint8_t temp[] = {0x09, 0x09, 0x44, 0x61, 0x76, 0x65, 0x20, 0x42, 0x6C, 0x65};
 
+TaskHandle_t sensor_task_handle = NULL;
+
+void start_sensor_task() {
+    if (sensor_task_handle == NULL) {
+        xTaskCreate(sensor_task, "sensor_task", 2048, NULL, 5, &sensor_task_handle);
+        ESP_LOGI("SENSOR", "Sensor task created");
+    }
+}
+
+void stop_sensor_task() {
+    if (sensor_task_handle != NULL) {
+        vTaskDelete(sensor_task_handle);
+        sensor_task_handle = NULL;
+        ESP_LOGW("SENSOR", "Sensor task stopped");
+    }
+}
+
 // static int gattc_read(uint16_t conn_handle, const struct ble_gatt_error *error, struct ble_gatt_attr *attr, void *arg) {
 //     if (error->status == 0) {
 //         ESP_LOGI(TAG, "Read successful! Attribute handle: %d", attr->handle);
@@ -61,19 +78,20 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
         if (event->connect.status == 0)
         {
             ESP_LOGI(TAG, "Connection established!");
+            if (hub_device != NULL) {
+                 hub_device->conn_handle = event->connect.conn_handle;
+            }
             
-            if (has_found_svc)
+            start_sensor_task();
+
+            if (has_found_svc)                                  // if service is already found, skip
             {
                 ESP_LOGI(TAG, "Service already found, skipping...");
                 return 0;
             }
-            if (hub_device != NULL) {
-                 hub_device->conn_handle = event->connect.conn_handle;
-            }
-            ESP_LOGI(TAG, "Discovering services KANSKE FELLLLL...");
+            ESP_LOGI(TAG, "Discovering services KANSKE FELLLLL..."); // log for debugging
             ble_gattc_disc_all_svcs(event->connect.conn_handle, disc_svcs, NULL);
             
-            xTaskCreate(sensor_task, "sensor_task", 2048, NULL, 5, NULL); // start sensor task
         }
         else
         {
@@ -81,7 +99,16 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
             ble_scan();
         }
         break;
-
+    case BLE_GAP_EVENT_DISCONNECT:
+        ESP_LOGE(TAG, "Disconnected from hub!");
+        stop_sensor_task();
+        if (hub_device != NULL)
+        {
+            hub_device->conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        }
+        ESP_LOGE(TAG, "Reconnecting...");
+        ble_scan();
+        break;
     default:
         break;
     }
