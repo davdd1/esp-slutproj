@@ -104,12 +104,12 @@ float get_temp() {
 void sensor_task(void *pvParameter) {
     while (1) {
         temperature = get_temp();
-        int ret = send_data_to_hub(temperature);  // Send the temperature value to the server
+        int ret = send_data_handler(PREFIX_SENSOR_DATA, temperature);  // Send the temperature value to the server
         if (ret != 0) {
             ESP_LOGE(tag, "Failed to send data to server");
         }
         // Log the temperature value in celcius
         ESP_LOGI(tag, "Temperature: %.2f °C", temperature);
-        vTaskDelay(8000 / portTICK_PERIOD_MS);
+        vTaskDelay(10000 / portTICK_PERIOD_MS); // Delay for 10 seconds
     }
 }

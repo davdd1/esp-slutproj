@@ -8,16 +8,25 @@ uint8_t ble_addr_type;
 
 static uint8_t temp[] = {0x09, 0x09, 0x44, 0x61, 0x76, 0x65, 0x20, 0x42, 0x6C, 0x65};
 
+TaskHandle_t device_task_handle = NULL;
 TaskHandle_t sensor_task_handle = NULL;
 
-void start_sensor_task() {
+void start_tasks() {
+    if (device_task_handle == NULL) {
+        xTaskCreate(device_task, "device_task", 2048, NULL, 4, &device_task_handle);
+        ESP_LOGI("DEVICE", "Device task created");
+    }
     if (sensor_task_handle == NULL) {
-        xTaskCreate(sensor_task, "sensor_task", 2048, NULL, 5, &sensor_task_handle);
+        xTaskCreate(sensor_task, "sensor_task", 3072, NULL, 5, &sensor_task_handle);
         ESP_LOGI("SENSOR", "Sensor task created");
     }
 }
 
-void stop_sensor_task() {
+void stop_tasks() {
+    if (device_task_handle != NULL) {
+        device_task_handle = NULL;
+        ESP_LOGW("DEVICE", "Device task stopped");
+    }
     if (sensor_task_handle != NULL) {
         vTaskDelete(sensor_task_handle);
         sensor_task_handle = NULL;
@@ -45,8 +54,15 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
             ESP_LOGI(TAG, "Device found! MAC below:");
             ESP_LOG_BUFFER_HEX(TAG, event->disc.addr.val, 6);
             ESP_LOGI(TAG, "Connecting...");
-
-            int ret = ble_gap_connect(ble_addr_type, &event->disc.addr, BLE_HS_FOREVER, NULL, ble_gap_event, NULL);
+            struct ble_gap_conn_params conn_params;
+            memset(&conn_params, 0, sizeof(conn_params));
+            conn_params.scan_itvl = 0x0010;
+            conn_params.scan_window = 0x0010;
+            conn_params.itvl_min = 0x0018;
+            conn_params.itvl_max = 0x0028;
+            conn_params.latency = 0;
+            conn_params.supervision_timeout = 0x0100;
+            int ret = ble_gap_connect(ble_addr_type, &event->disc.addr, BLE_HS_FOREVER, &conn_params, ble_gap_event, NULL);
 
             if (ret != 0)
             {
@@ -62,8 +78,8 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
             if (hub_device != NULL) {
                  hub_device->conn_handle = event->connect.conn_handle;
             }
-            
-            start_sensor_task();
+
+           start_tasks();
 
             if (has_found_svc)                                  // if service is already found, skip
             {
@@ -82,7 +98,7 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
         break;
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGE(TAG, "Disconnected from hub!");
-        stop_sensor_task();
+        stop_tasks();
         if (hub_device != NULL)
         {
             hub_device->conn_handle = BLE_HS_CONN_HANDLE_NONE;

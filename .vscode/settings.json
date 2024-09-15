@@ -35,7 +35,8 @@
         "ble_gatt_client.h": "c",
         "ble_gap.h": "c",
         "ds18b20_sensor.h": "c",
-        "sdkconfig.h": "c"
+        "sdkconfig.h": "c",
+        "stdio.h": "c"
     },
     "idf.flashType": "UART"
 }
