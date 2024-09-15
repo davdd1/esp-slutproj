@@ -4,6 +4,7 @@
 bool is_ssid_set = false;
 bool is_pass_set = false;
 bool has_wifi_init = false;
+bool has_wifi_connected = false;
 
 wifi_config_t wifi_config = {
     .sta = {
@@ -13,15 +14,16 @@ wifi_config_t wifi_config = {
     },
 };
 
+
 void wifi_init()
 {
     static esp_netif_t* netif = NULL;
     // if first time, initialize NVS
     if (!has_wifi_init)
     {
-
         ESP_ERROR_CHECK(esp_netif_init());
         ESP_ERROR_CHECK(esp_event_loop_create_default());
+
         netif = esp_netif_create_default_wifi_sta();
         if (netif == NULL)
         {
@@ -66,6 +68,8 @@ void wifi_init()
             ESP_LOGI("WIFI", "Gateway: " IPSTR, IP2STR(&ip_info.gw));
             is_ssid_set = false;
             is_pass_set = false;
+            has_wifi_connected = true;
+            ESP_LOGE("WIFI", "WIFI CONNECTED: %d", has_wifi_connected);
             break;
         }
         ESP_LOGI("WIFI", "Waiting for IP... %d", retries);

@@ -16,12 +16,13 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
 
         if (event->connect.status != 0)
         {
-            ble_app_advertise();
+            ESP_LOGE(TAG, "Connection error: %d", event->connect.status);
         } else {
             is_connected = true;
         }
-        break;
         // Advertise again
+        ble_app_advertise();
+        break;
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "DEVICE DISCONNECTED. RESTARTING ADVERTISING");
         is_connected = false;

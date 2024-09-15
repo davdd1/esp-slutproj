@@ -13,6 +13,7 @@
 extern bool is_ssid_set;
 extern bool is_pass_set;
 extern bool has_wifi_init;
+extern bool has_wifi_connected;
 extern wifi_config_t wifi_config;
 
 void wifi_init();

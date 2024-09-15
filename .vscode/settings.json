@@ -30,7 +30,11 @@
         "cmath": "c",
         "limits": "c",
         "new": "c",
-        "utility": "c"
+        "utility": "c",
+        "esp_event.h": "c",
+        "hub_queue.h": "c",
+        "hub_ble_gatt.h": "c",
+        "hub_server_comm.h": "c"
     },
     "idf.flashType": "UART"
 }
