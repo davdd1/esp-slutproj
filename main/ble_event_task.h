@@ -5,8 +5,6 @@
 #include <stdint.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/event_groups.h"
-#include "esp_event.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
 #include "nimble/nimble_port.h"
@@ -14,8 +12,6 @@
 #include "host/ble_hs.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
-#include "sdkconfig.h"
-#include "driver/gpio.h"
 #include "host/ble_gap.h"
 #include "host/ble_gatt.h"
 

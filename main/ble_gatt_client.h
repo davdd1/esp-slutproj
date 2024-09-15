@@ -6,8 +6,6 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/event_groups.h"
-#include "esp_event.h"
 #include "esp_err.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
@@ -16,8 +14,6 @@
 #include "host/ble_hs.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
-#include "sdkconfig.h"
-#include "driver/gpio.h"
 #include "arpa/inet.h"
 
 // Hub GATT Service UUIDs
