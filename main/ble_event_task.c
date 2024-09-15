@@ -3,7 +3,7 @@
 #include "ble_gap_init.h"
 #include "ds18b20_sensor.h"
 
-static char *TAG = "BLE Server";
+static char *TAG = "BLE_EVENT_HANDLER";
 uint8_t ble_addr_type;
 
 static uint8_t temp[] = {0x09, 0x09, 0x44, 0x61, 0x76, 0x65, 0x20, 0x42, 0x6C, 0x65};
@@ -24,24 +24,6 @@ void stop_sensor_task() {
         ESP_LOGW("SENSOR", "Sensor task stopped");
     }
 }
-
-// static int gattc_read(uint16_t conn_handle, const struct ble_gatt_error *error, struct ble_gatt_attr *attr, void *arg) {
-//     if (error->status == 0) {
-//         ESP_LOGI(TAG, "Read successful! Attribute handle: %d", attr->handle);
-//     } else {
-//         ESP_LOGE(TAG, "Read failed, error: %d", error->status);
-//     }
-//     return 0;
-// }
-
-// static int gattc_write(uint16_t conn_handle, const struct ble_gatt_error *error, struct ble_gatt_attr *attr, void *arg) {
-//     if (error->status == 0) {
-//         ESP_LOGI(TAG, "Write successful! Attribute handle: %d", attr->handle);
-//     } else {
-//         ESP_LOGE(TAG, "Write failed, error: %d", error->status);
-//     }
-//     return 0;
-// }
 
 int ble_gap_event(struct ble_gap_event *event, void *arg)
 {
@@ -71,7 +53,6 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
                 ESP_LOGE(TAG, "Connection failed!: %d", ret);
             }
         }
-        //vTaskDelay(pdMS_TO_TICKS(100));
         break;
 
     case BLE_GAP_EVENT_CONNECT:
