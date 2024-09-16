@@ -63,6 +63,7 @@ File: .\main\ble_task.c
 
 static char *TAG = "BLE Server";
 bool is_connected = false;
+uint16_t ble_gap_conn_handle;
 
 int ble_gap_event(struct ble_gap_event *event, void *arg)
 {
@@ -77,6 +78,7 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
             ESP_LOGE(TAG, "Connection error: %d", event->connect.status);
         } else {
             is_connected = true;
+            ble_gap_conn_handle = event->connect.conn_handle;
         }
         // Advertise again
         ble_app_advertise();
@@ -84,6 +86,7 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "DEVICE DISCONNECTED. RESTARTING ADVERTISING");
         is_connected = false;
+        ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         ble_app_advertise();
         break;
     default:
@@ -131,8 +134,6 @@ File: .\main\ble_task.h
 #include <stdint.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/event_groups.h"
-#include "esp_event.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
 #include "nimble/nimble_port.h"
@@ -140,8 +141,9 @@ File: .\main\ble_task.h
 #include "host/ble_hs.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
-#include "sdkconfig.h"
-#include "driver/gpio.h"
+
+extern bool is_connected;
+extern uint16_t ble_gap_conn_handle;
 
 int ble_gap_event(struct ble_gap_event *event, void *arg);
 void ble_wifi_init();
@@ -201,8 +203,6 @@ File: .\main\hub_ble_gap.h
 #include <stdint.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/event_groups.h"
-#include "esp_event.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
 #include "nimble/nimble_port.h"
@@ -210,8 +210,6 @@ File: .\main\hub_ble_gap.h
 #include "host/ble_hs.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
-#include "sdkconfig.h"
-#include "driver/gpio.h"
 
 int ble_gap_event(struct ble_gap_event *event, void *arg);
 void ble_app_advertise();
@@ -224,10 +222,12 @@ void host_task(void *params);
 File: .\main\hub_ble_gatt.c
 ================================================================================
 
+#include "ble_task.h"
 #include "hub_ble_gatt.h"
 #include "wifi_task.h"
 #include "hub_server_comm.h"
 #include "hub_queue.h"
+
 
 static char *TAG = "BLE HUB";
 
@@ -243,10 +243,11 @@ const struct ble_gatt_svc_def gatt_svcs[] = {
           .uuid = BLE_UUID16_DECLARE(0x5678),
           .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE,
           .access_cb = hub_handle_temperature_data},
-         {// Characteristic for Commands/Configuration (prefix 3)
+         {// Char for LED command
           .uuid = BLE_UUID16_DECLARE(0x9ABC),
-          .flags = BLE_GATT_CHR_F_WRITE,
-          .access_cb = hub_handle_commands},
+          .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+          .access_cb = NULL,
+         },
          {0} // End of characteristics array
      }},
     {.type = BLE_GATT_SVC_TYPE_PRIMARY, .uuid = BLE_UUID16_DECLARE(0x0185), .characteristics = (struct ble_gatt_chr_def[]){
@@ -255,74 +256,74 @@ const struct ble_gatt_svc_def gatt_svcs[] = {
     {0} // End of services array
 };
 
+void notify_led_command(const char* command) {
+    struct os_mbuf* om;
+
+    // Create the notification data (ex: "LED:255,0,0")
+    om = ble_hs_mbuf_from_flat(command, strlen(command));
+    if (om == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create mbuf for notification");
+        return;
+    }
+
+    // Notify the connected client
+    int ret = ble_gatts_notify_custom(ble_gap_conn_handle, 0x9ABC, om);
+    if (ret != 0)
+    {
+        ESP_LOGE(TAG, "Failed to notify LED command: %d", ret);
+    } else {
+        ESP_LOGI(TAG, "Notified LED command: %s", command);
+    }
+}
+
 int hub_handle_device_id(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
     ESP_LOGI("BLE_GATT", "Device ID characteristic accessed");
-    if (ctxt->om->om_len <= 0) {
+    if (ctxt->om->om_len <= 0)
+    {
         ESP_LOGI(TAG, "Empty Device ID received");
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     }
-
-    if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
-        char device_id[ctxt->om->om_len + 1];
-        memcpy(device_id, ctxt->om->om_data, ctxt->om->om_len);
-        device_id[ctxt->om->om_len] = '\0'; // null terminate
-        ESP_LOGI("Device ID", "Received: %s", device_id);
-        enqueue_mac_address(ctxt->om->om_data);
-        ESP_LOGW(TAG, "Device ID to q: %s", ctxt->om->om_data);
+    if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR)
+    {
+        if (ctxt->om->om_len == 6)
+        {
+            uint8_t device_id[6];
+            memcpy(device_id, ctxt->om->om_data, 6);
+            ESP_LOGI("Device ID", "Received MAC: %02x:%02x:%02x:%02x:%02x:%02x",
+                     device_id[0], device_id[1], device_id[2], device_id[3], device_id[4], device_id[5]);
+            enqueue_mac_address(device_id);
+        }
+        else
+        {
+            ESP_LOGE("Device ID", "Invalid MAC address length received: %d", ctxt->om->om_len);
+        }
     }
-   
-    //debug
-    ESP_LOGI("Device ID", "Data length: %d", ctxt->om->om_len);
-    ESP_LOGI("Device ID", "Data: %s", (char *)ctxt->om->om_data);
-
     memset(ctxt->om->om_data, 0, ctxt->om->om_len); // Clear the buffer
     return 0;
 }
 
 int hub_handle_temperature_data(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
-    
+
     ESP_LOGI("BLE_GATT", "Temperature characteristic accessed");
-    if (ctxt->om->om_len <= 0) {
+    if (ctxt->om->om_len <= 0)
+    {
         ESP_LOGE(TAG, "Empty sensor data received");
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     }
 
     if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR)
-    {   //clear the buffer
+    { // clear the buffer
         char temp[ctxt->om->om_len + 1];
         memcpy(temp, ctxt->om->om_data, ctxt->om->om_len);
         temp[ctxt->om->om_len] = '\0'; // Lägg till null-terminator
         ESP_LOGI("Temperature", "Received: %s °C", temp);
-        enqueue_temperature(temp);       
-
+        enqueue_temperature(temp); // Add to queue
     }
-
-    //debug
-    ESP_LOGI("Temperature", "Data length: %d", ctxt->om->om_len);
-    ESP_LOGI("Temperature", "Data: %s", (char *)ctxt->om->om_data);
 
     memset(ctxt->om->om_data, 0, ctxt->om->om_len);
-    return 0;
-}
-
-int hub_handle_commands(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg) {
-    ESP_LOGI("BLE_GATT", "Commands characteristic accessed");
-    if (ctxt->om->om_len <= 0) {
-        ESP_LOGE(TAG, "Empty command received");
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    }
-
-    if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
-        char command[ctxt->om->om_len + 1];
-        memcpy(command, ctxt->om->om_data, ctxt->om->om_len);
-        command[ctxt->om->om_len] = '\0'; // Null-terminate
-        ESP_LOGI("Commands", "Received: %s", command);
-        if (has_wifi_init) {
-            send_to_server(PREFIX_COMMAND, command); // Prefix 3 for commands
-        }
-    }
     return 0;
 }
 
@@ -360,8 +361,6 @@ File: .\main\hub_ble_gatt.h
 #include <stdint.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/event_groups.h"
-#include "esp_event.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
 #include "nimble/nimble_port.h"
@@ -369,12 +368,12 @@ File: .\main\hub_ble_gatt.h
 #include "host/ble_hs.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
-#include "sdkconfig.h"
-#include "driver/gpio.h"
 
-int hub_handle_temperature_data(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
-int hub_handle_commands(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
+void notify_led_command(const char *command);
+
 int hub_handle_device_id(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
+int hub_handle_temperature_data(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
+//int hub_handle_commands(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
 int hub_handle_wifi_ssid_write(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
 int hub_handle_wifi_password_write(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
 
@@ -389,18 +388,25 @@ File: .\main\hub_main.c
 #include "hub_ble_gatt.h"
 #include "ble_task.h"
 #include "hub_queue.h"
-#include "driver/gpio.h"
+#include "hub_server_comm.h"
 
 void app_main(void)
 {
-     // Initialize BLE and WiFi
-    ble_wifi_init(); 
-    
     // Initialize the queue for sending data
-    init_queue(); 
+    init_queue();
 
     // Start the queue processing task
-    xTaskCreate(process_queue_task, "process_queue_task", 4096, NULL, 5, NULL);
+    xTaskCreate(process_queue_task, "process_queue_task", 4096, NULL, 2, NULL);
+
+    // Initialize BLE and WiFi
+    ble_wifi_init();
+
+    while (1)
+    {
+        // Read LED command from the Go server every 10 seconds
+        read_led_command_from_server();
+        vTaskDelay(pdMS_TO_TICKS(10000)); // Wait for 10 seconds
+    }
 }
 
 ================================================================================
@@ -422,8 +428,10 @@ void init_queue(){
 }
 void process_queue_task(void* pvParameters) {
     queue_item_t item;
+    while (1) {
     //check if wifi is init
-    if (has_wifi_init) {
+
+    if (has_wifi_connected) {
         if (xQueueReceive(data_queue, &item, portMAX_DELAY) == pdPASS) {
             switch (item.action_type) {
                 case ACTION_SEND_TEMPERATURE:
@@ -437,40 +445,96 @@ void process_queue_task(void* pvParameters) {
                     snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x", 
                             item.data.mac_address[0], item.data.mac_address[1], item.data.mac_address[2], 
                             item.data.mac_address[3], item.data.mac_address[4], item.data.mac_address[5]);
-                    ESP_LOGI(TAG, "Sending MAC address: %s", mac_str);
+                    ESP_LOGW(TAG, "Sending MAC address: %s", mac_str);
                     send_to_server(PREFIX_REGISTER, mac_str);
                     break;
                 default:
                     ESP_LOGE(TAG, "Unknown action type: %d", item.action_type);
                     break;
             }
+            //Maybe close connection here
+            // close_connection();
+    }
         } else {
-            vTaskDelay(1000 / portTICK_PERIOD_MS);  // Wait for a second before checking again
+            vTaskDelay(100 / portTICK_PERIOD_MS);  // Wait for a second before checking again
         }
     }
 }
 void enqueue_temperature(const char* temperature) {
+    ESP_LOGW(TAG, "Enqueuing temperature data");
+    ESP_LOGW(TAG, "WIFICONNECTED: %d", has_wifi_connected);
     queue_item_t item;
     item.action_type = ACTION_SEND_TEMPERATURE;
-    item.data.temperature = temperature;
+    
+    // Copy temperature data to item (strncpy ensures no buffer overflow)
+    strncpy(item.data.temperature, temperature, sizeof(item.data.temperature) - 1);
+    item.data.temperature[sizeof(item.data.temperature) - 1] = '\0'; // Null-terminate
 
-    if (xQueueSend(data_queue, &item, portMAX_DELAY) != pdPASS) {
-        ESP_LOGE(TAG, "Failed to enqueue temperature data");
-        return;
-    }
-    ESP_LOGW(TAG, "Temperature data enqueued");
+    if (xQueueSend(data_queue, &item, 100 / portTICK_PERIOD_MS) != pdPASS) {
+        // Queue is full, check if we can discard the oldest item (only temperature)
+        ESP_LOGW(TAG, "Queue is full, checking oldest item");
+
+        queue_item_t oldest_item;
+        if (xQueuePeek(data_queue, &oldest_item, 0) == pdPASS) {
+            // Check if the oldest item is temperature data
+            if (oldest_item.action_type == ACTION_SEND_TEMPERATURE) {
+                // Discard the oldest temperature data
+                ESP_LOGW(TAG, "Discarding oldest temperature data");
+                xQueueReceive(data_queue, &oldest_item, 0); // Remove the oldest item
+
+                // Now try sending the new item again
+                if (xQueueSend(data_queue, &item, 100 / portTICK_PERIOD_MS) != pdPASS) {
+                    ESP_LOGE(TAG, "Failed to enqueue temperature data after discarding oldest");
+                } else {
+                    ESP_LOGI(TAG, "Temperature data enqueued after discarding oldest");
+                }
+            } else {
+                ESP_LOGW(TAG, "Oldest item is not temperature data, skipping enqueue");
+            }
+        }
+    } else {
+        ESP_LOGW(TAG, "Temperature data enqueued");
+    } 
 }
-void enqueue_mac_address(uint8_t mac_address[6]) {
+
+void enqueue_mac_address(const uint8_t* mac_address) {
+    ESP_LOGW(TAG, "Enqueuing MAC address");
+    ESP_LOGW(TAG, "WIFICONNECTED: %d", has_wifi_connected);
     queue_item_t item;
     item.action_type = ACTION_SEND_MAC_ADDRESS;
+    
     memcpy(item.data.mac_address, mac_address, 6);
 
-    if (xQueueSend(data_queue, &item, portMAX_DELAY) != pdPASS) {
-        ESP_LOGE(TAG, "Failed to enqueue MAC address");
-        return;
+    // Try to enqueue the MAC address
+    if (xQueueSend(data_queue, &item, 100 / portTICK_PERIOD_MS) != pdPASS) {
+        ESP_LOGW(TAG, "Queue is full, checking oldest item");
+
+        queue_item_t oldest_item;
+        // Peek to see the oldest item in the queue
+        if (xQueuePeek(data_queue, &oldest_item, 0) == pdPASS) {
+            // Check if the oldest item is temperature data
+            if (oldest_item.action_type == ACTION_SEND_TEMPERATURE) {
+                // Discard the oldest temperature data
+                ESP_LOGW(TAG, "Discarding oldest temperature data to enqueue MAC address");
+                xQueueReceive(data_queue, &oldest_item, 0); // Remove the oldest temperature item
+
+                // Now try to enqueue the MAC address again
+                if (xQueueSend(data_queue, &item, 100 / portTICK_PERIOD_MS) != pdPASS) {
+                    ESP_LOGE(TAG, "Failed to enqueue MAC address after discarding oldest");
+                } else {
+                    ESP_LOGI(TAG, "MAC address enqueued after discarding oldest temperature data");
+                }
+            } else {
+                ESP_LOGE(TAG, "Queue is full, but oldest item is not temperature data. Could not enqueue MAC address.");
+            }
+        } else {
+            ESP_LOGE(TAG, "Failed to peek into queue.");
+        }
+    } else {
+        ESP_LOGI(TAG, "MAC address enqueued");
     }
-    ESP_LOGW(TAG, "MAC address enqueued");
 }
+
 
 ================================================================================
 File: .\main\hub_queue.h
@@ -484,7 +548,7 @@ File: .\main\hub_queue.h
 #include "esp_log.h"
 #include "wifi_task.h"
 
-#define QUEUE_LENGTH 10
+#define QUEUE_LENGTH 30
 
 
 
@@ -497,7 +561,7 @@ typedef struct {
     action_type_t action_type; // type of data
     union {
         //temp and mac address
-        char* temperature;
+        char temperature[32];
         uint8_t mac_address[6];
     } data;
 } queue_item_t;
@@ -505,8 +569,7 @@ typedef struct {
 void init_queue();
 void process_queue_task(void* pvParameters);
 void enqueue_temperature(const char* temperature);
-void enqueue_mac_address(uint8_t mac_address[6]);
-void enqueue_message(int type, const char* data);
+void enqueue_mac_address(const uint8_t* mac_address);
 
 
 #endif
@@ -516,49 +579,132 @@ File: .\main\hub_server_comm.c
 ================================================================================
 
 #include "hub_server_comm.h"
-
+#include "ble_task.h"
+#include "hub_ble_gatt.h"
 
 static const char* TAG = "HUB-TCP";
+static int sock = -1;  // Persistent socket for communication
 
-void send_to_server(int prefix, const char* data) {
-    int sock = 0;
+// Initialize a TCP connection to the server
+static bool connect_to_server() {
     struct sockaddr_in server_addr;
+
+    if (sock != -1) {
+        // Socket already exists, check if it's still valid
+        return true;
+    }
+
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
         ESP_LOGE(TAG, "Socket creation failed");
-        return;
+        return false;
     }
 
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(SERVER_PORT);
     if (inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr) <= 0) {
-        ESP_LOGI(TAG, "Invalid address / not supported");
+        ESP_LOGE(TAG, "Invalid address / not supported");
         close(sock);
-        return;
+        sock = -1;
+        return false;
     }
 
     if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         ESP_LOGE(TAG, "Connection to server failed");
         close(sock);
+        sock = -1;
+        return false;
+    }
+
+    ESP_LOGI(TAG, "Connected to server: %s:%d", SERVER_IP, SERVER_PORT);
+    return true;
+}
+
+// Read data (Led command) from the the GO server
+void read_led_command_from_server() {
+    if (!connect_to_server()) {
+        ESP_LOGE(TAG, "Failed to connect to server");
         return;
     }
 
-    // update messsage with prefix
+    char recv_buffer[64];
+    int len = recv(sock, recv_buffer, sizeof(recv_buffer) - 1, 0);
+    if (len > 0) {
+        recv_buffer[len] = 0;  // Null-terminate received data
+        ESP_LOGI(TAG, "Received command from server: %s", recv_buffer);
+        
+        //notify the ble client with the command
+        notify_led_command(recv_buffer);
+    } else if (len == 0) {
+        ESP_LOGE(TAG, "Server closed the connection");
+        close(sock);
+        sock = -1;
+    } else {
+        ESP_LOGE(TAG, "Failed to receive data");
+        close(sock);
+        sock = -1;
+    }
+}
+
+// Send data to the server
+void send_to_server(int prefix, const char* data) {
+    if (!connect_to_server()) {
+        ESP_LOGE(TAG, "Failed to connect to server");
+        return;
+    }
+
+    // Prepare the message with the prefix
     char message[256];
     int msg_len = snprintf(message, sizeof(message), "%d%s", prefix, data);
 
-    //send raw message with prefix
-    send(sock, message, msg_len, 0);
+    // Send the message
+    int bytes_sent = send(sock, message, msg_len, 0);
+    if (bytes_sent < 0) {
+        ESP_LOGE(TAG, "Failed to send data, attempting to reconnect...");
+        close(sock);
+        sock = -1;
+
+        // Try to reconnect and resend the data
+        if (!connect_to_server()) {
+            ESP_LOGE(TAG, "Reconnection failed");
+            return;
+        }
+
+        bytes_sent = send(sock, message, msg_len, 0);
+        if (bytes_sent < 0) {
+            ESP_LOGE(TAG, "Failed to send data after reconnection");
+            close(sock);
+            sock = -1;
+            return;
+        }
+    }
+
     ESP_LOGI(TAG, "Data sent: %s", message);
 
+    // Receive response from the server (optional)
     char recv_buffer[128];
     int len = recv(sock, recv_buffer, sizeof(recv_buffer) - 1, 0);
     if (len > 0) {
-       recv_buffer[len] = 0; //null terminate received data
-       ESP_LOGI(TAG, "Received from server: %s", recv_buffer); 
+        recv_buffer[len] = 0;  // Null-terminate received data
+        ESP_LOGI(TAG, "Received from server: %s", recv_buffer);
+    } else if (len == 0) {
+        ESP_LOGE(TAG, "Server closed the connection");
+        close(sock);
+        sock = -1;
+    } else {
+        ESP_LOGE(TAG, "Failed to receive data");
+        close(sock);
+        sock = -1;
     }
+}
 
-    close(sock);
+// Close the persistent connection when needed
+void close_connection() {
+    if (sock != -1) {
+        close(sock);
+        sock = -1;
+        ESP_LOGI(TAG, "Connection closed");
+    }
 }
 
 
@@ -579,7 +725,11 @@ File: .\main\hub_server_comm.h
 #include "lwip/sockets.h"
 #include "esp_log.h"
 
-void send_to_server(int prefix, const char* data);
+void read_led_command_from_server();
+
+void send_to_server(int prefix, const char *data);
+
+void close_connection();
 
 #endif
 
@@ -593,6 +743,7 @@ File: .\main\wifi_task.c
 bool is_ssid_set = false;
 bool is_pass_set = false;
 bool has_wifi_init = false;
+bool has_wifi_connected = false;
 
 wifi_config_t wifi_config = {
     .sta = {
@@ -602,15 +753,16 @@ wifi_config_t wifi_config = {
     },
 };
 
+
 void wifi_init()
 {
     static esp_netif_t* netif = NULL;
     // if first time, initialize NVS
     if (!has_wifi_init)
     {
-
         ESP_ERROR_CHECK(esp_netif_init());
         ESP_ERROR_CHECK(esp_event_loop_create_default());
+
         netif = esp_netif_create_default_wifi_sta();
         if (netif == NULL)
         {
@@ -655,6 +807,8 @@ void wifi_init()
             ESP_LOGI("WIFI", "Gateway: " IPSTR, IP2STR(&ip_info.gw));
             is_ssid_set = false;
             is_pass_set = false;
+            has_wifi_connected = true;
+            ESP_LOGE("WIFI", "WIFI CONNECTED: %d", has_wifi_connected);
             break;
         }
         ESP_LOGI("WIFI", "Waiting for IP... %d", retries);
@@ -705,11 +859,11 @@ File: .\main\wifi_task.h
 #include "esp_netif.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
-#include "sdkconfig.h"
 
 extern bool is_ssid_set;
 extern bool is_pass_set;
 extern bool has_wifi_init;
+extern bool has_wifi_connected;
 extern wifi_config_t wifi_config;
 
 void wifi_init();

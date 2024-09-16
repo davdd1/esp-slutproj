@@ -37,6 +37,8 @@ void process_queue_task(void* pvParameters) {
                     ESP_LOGE(TAG, "Unknown action type: %d", item.action_type);
                     break;
             }
+            //Maybe close connection here
+            // close_connection();
     }
         } else {
             vTaskDelay(100 / portTICK_PERIOD_MS);  // Wait for a second before checking again

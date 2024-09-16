@@ -2,16 +2,23 @@
 #include "hub_ble_gatt.h"
 #include "ble_task.h"
 #include "hub_queue.h"
-#include "driver/gpio.h"
+#include "hub_server_comm.h"
 
 void app_main(void)
 {
     // Initialize the queue for sending data
-    init_queue(); 
+    init_queue();
 
     // Start the queue processing task
     xTaskCreate(process_queue_task, "process_queue_task", 4096, NULL, 2, NULL);
 
-     // Initialize BLE and WiFi
-    ble_wifi_init(); 
+    // Initialize BLE and WiFi
+    ble_wifi_init();
+
+    while (1)
+    {
+        // Read LED command from the Go server every 10 seconds
+        read_led_command_from_server();
+        vTaskDelay(pdMS_TO_TICKS(10000)); // Wait for 10 seconds
+    }
 }

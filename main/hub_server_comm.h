@@ -11,6 +11,10 @@
 #include "lwip/sockets.h"
 #include "esp_log.h"
 
-void send_to_server(int prefix, const char* data);
+void read_led_command_from_server();
+
+void send_to_server(int prefix, const char *data);
+
+void close_connection();
 
 #endif

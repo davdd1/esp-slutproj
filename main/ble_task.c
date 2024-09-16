@@ -5,6 +5,7 @@
 
 static char *TAG = "BLE Server";
 bool is_connected = false;
+uint16_t ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 
 int ble_gap_event(struct ble_gap_event *event, void *arg)
 {
@@ -19,6 +20,7 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
             ESP_LOGE(TAG, "Connection error: %d", event->connect.status);
         } else {
             is_connected = true;
+            ble_gap_conn_handle = event->connect.conn_handle;
         }
         // Advertise again
         ble_app_advertise();
@@ -26,6 +28,7 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "DEVICE DISCONNECTED. RESTARTING ADVERTISING");
         is_connected = false;
+        ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         ble_app_advertise();
         break;
     default:

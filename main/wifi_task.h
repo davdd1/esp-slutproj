@@ -8,7 +8,6 @@
 #include "esp_netif.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
-#include "sdkconfig.h"
 
 extern bool is_ssid_set;
 extern bool is_pass_set;
