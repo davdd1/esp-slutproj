@@ -86,7 +86,6 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
                 ESP_LOGI(TAG, "Service already found, skipping...");
                 return 0;
             }
-            ESP_LOGI(TAG, "Discovering services KANSKE FELLLLL..."); // log for debugging
             ble_gattc_disc_all_svcs(event->connect.conn_handle, disc_svcs, NULL);
             
         }
@@ -118,7 +117,7 @@ void ble_scan(void)
     memset(&disc_params, 0, sizeof(disc_params));
     disc_params.passive = 1;           // passive scanning
     disc_params.filter_duplicates = 1; // filters duplicates
-    disc_params.itvl = 0x0010;         // interval between (100ms)
+    disc_params.itvl = 0x0050;         // interval between
     disc_params.window = 0x0010;       // how long
 
     int ret = ble_gap_disc(ble_addr_type, BLE_HS_FOREVER, &disc_params, ble_gap_event, NULL);

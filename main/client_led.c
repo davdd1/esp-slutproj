@@ -40,6 +40,8 @@ void led_init()
         {
             ESP_LOGE(TAG, "Failed to clear LED strip");
         }
+
+        xTaskCreate(led_task, "led_task", 2048, NULL, 6, NULL);
     }
 }
 // Set the color of the LED strip
@@ -63,32 +65,8 @@ void set_led_color(int red, int green, int blue)
     {
         ESP_LOGE(TAG, "Failed to show LED color");
     }
-}
-// BLE notification handler for LED commands
-static void ble_notification_handler(uint16_t conn_handle, struct ble_gatt_attr *attr, const struct ble_gatt_error *error, void *arg)
-{
-    if (error->status != 0)
-    {
-        ESP_LOGE(TAG, "BLE notification failed, error: %d", error->status);
-        return;
-    }
 
-    // Parse the received LED command
-    char recv_buffer[64];
-    memcpy(recv_buffer, attr->om->om_data, attr->om->om_len);
-    recv_buffer[attr->om->om_len] = '\0'; // Null-terminate the string
-
-    ESP_LOGI(TAG, "Received LED command: %s", recv_buffer);
-
-    // Handle the command, e.g., "LED:255,0,0"
-    if (strncmp(recv_buffer, "LED:", 4) == 0)
-    {
-        int red, green, blue;
-        sscanf(recv_buffer + 4, "%d,%d,%d", &red, &green, &blue);
-
-        // Set the LED color on the ESP32 based on the received command
-        set_led_color(red, green, blue);
-    }
+    ESP_LOGI(TAG, "Set LED color: R=%d, G=%d, B=%d", red, green, blue);
 }
 
 void turn_off_led()

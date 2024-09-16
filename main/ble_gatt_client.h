@@ -44,6 +44,8 @@ extern ble_device_info_t *hub_device;
 
 void init_ble_device();
 
+void led_task(void *pvParameters);
+
 void device_task(void* pvParameters);
 
 int disc_chrs(uint16_t conn_handle, const struct ble_gatt_error *error, const struct ble_gatt_chr *characteristic, void* arg);
@@ -51,7 +53,8 @@ int disc_chrs(uint16_t conn_handle, const struct ble_gatt_error *error, const st
 int disc_svcs(uint16_t conn_handle, const struct ble_gatt_error *error, const struct ble_gatt_svc *service, void *arg);
 
 void write_cb(uint16_t conn_handle, const struct ble_gatt_error *error, struct ble_gatt_attr *attr, void *arg);
-void sub_cb(uint16_t conn_handle, const struct ble_gatt_error *error, struct ble_gatt_attr *attr, void *arg);
+void read_cb(uint16_t conn_handle, const struct ble_gatt_error *error, struct ble_gatt_attr *attr, void *arg);
+int read_led_command_from_hub();
 int send_device_id_to_hub();
 int send_temp_data_to_hub(float sensor_temperature);
 
