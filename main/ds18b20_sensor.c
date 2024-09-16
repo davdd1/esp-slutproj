@@ -1,5 +1,6 @@
 #include "ble_gatt_client.h"
 #include "ds18b20_sensor.h"
+#include "client_led.h"
 #include "ds18b20.h"
 #include "onewire_bus.h"
 #include "onewire_bus_impl_rmt.h"
@@ -88,7 +89,7 @@ float get_temp() {
         return -1.0;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(1000));  // Delay for conversion to complete
+    vTaskDelay(pdMS_TO_TICKS(350));  // Delay for conversion to complete
 
     // Get the temperature value
     esp_err_t err5 = ds18b20_get_temperature(ds18b20, &temperature);
@@ -110,6 +111,7 @@ void sensor_task(void *pvParameter) {
         }
         // Log the temperature value in celcius
         ESP_LOGI(tag, "Temperature: %.2f °C", temperature);
+
         vTaskDelay(10000 / portTICK_PERIOD_MS); // Delay for 10 seconds
     }
 }

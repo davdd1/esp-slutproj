@@ -2,6 +2,7 @@
 #include "ble_gatt_client.h"
 #include "ble_event_task.h"
 #include "ds18b20_sensor.h"
+#include "client_led.h"
 
 void app_main(void)
 {

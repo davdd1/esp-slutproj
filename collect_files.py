@@ -20,7 +20,7 @@ def main():
     root_dir = args.directory
 
     # Define directories to ignore
-    ignore_dirs = {'.vscode', '.devcontainer', 'build'}
+    ignore_dirs = {'.vscode', '.devcontainer', 'build', 'managed_components'}
 
     with open(output_file, 'w', encoding='utf-8') as outfile:
         for dirpath, dirnames, filenames in os.walk(root_dir):

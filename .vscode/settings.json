@@ -36,7 +36,10 @@
         "ble_gap.h": "c",
         "ds18b20_sensor.h": "c",
         "sdkconfig.h": "c",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "led_strip.h": "c",
+        "led_strip_rmt.h": "c",
+        "esp_log.h": "c"
     },
     "idf.flashType": "UART"
 }

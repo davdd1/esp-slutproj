@@ -1,5 +1,6 @@
 #include "ble_gatt_client.h"
 #include "ds18b20_sensor.h"
+#include "client_led.h"
 #include "esp_mac.h"
 
 static char *TAG = "BLE_GATT_CLIENT";
@@ -7,6 +8,10 @@ static char *TAG = "BLE_GATT_CLIENT";
 ble_device_info_t *hub_device;
 bool has_found_all_chrs = false;
 bool has_found_svc = false;
+uint16_t cccd_handle = 0;
+static bool has_device_id_chr = false;
+static bool has_temp_data_chr = false;
+static bool has_led_chr = false;
 
 // init device info, mallloc
 void init_ble_device()
@@ -21,12 +26,14 @@ void init_ble_device()
     {
         ESP_LOGI(TAG, "Allocated memory for hub device");
         hub_device->conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        led_init();
     }
 }
 
 void device_task(void *pvParameters)
 {
-    while (!has_found_all_chrs) {
+    while (!has_found_all_chrs)
+    {
         ESP_LOGI("DEVICE_TASK", "Wait for service discovery to complete");
         vTaskDelay(3000 / portTICK_PERIOD_MS);
     }
@@ -56,7 +63,44 @@ void device_task(void *pvParameters)
     vTaskDelete(NULL);
 }
 
-int disc_chrs(uint16_t conn_handle, const struct ble_gatt_error *error, const struct ble_gatt_chr *characteristic, void *arg)
+int disc_dscs(uint16_t conn_handle, const struct ble_gatt_error *error, const struct ble_gatt_dsc *descriptor, void *arg)
+{
+    if (error->status != 0)
+    {
+        ESP_LOGE(TAG, "Descriptor discovery failed: %d", error->status);
+        return error->status;
+    }
+
+    if (descriptor == NULL)
+    {
+        ESP_LOGE(TAG, "Descriptor is NULL");
+        return -1;
+    }
+    if (hub_device->conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+        ESP_LOGE(TAG, "No active connection, cannot discover descriptors.");
+        return -1;
+    }
+
+    ESP_LOGI(TAG, "Found descriptor UUID: %x", descriptor->uuid.u16.value);
+
+    // Check if this is the CCCD descriptor
+    if (descriptor->uuid.u16.value == BLE_GATT_DSC_CLT_CFG_UUID16)
+    {
+        ESP_LOGI(TAG, "Found CCCD descriptor at handle: %d", descriptor->handle);
+        cccd_handle = descriptor->handle - 2; // Save the CCCD handle
+        uint16_t cccd_value = 0x0001; // Enable notifications
+        int ret = ble_gattc_write_flat(conn_handle, cccd_handle, &cccd_value, sizeof(cccd_value), sub_cb, NULL);
+        if (ret != 0)
+        {
+            ESP_LOGE(TAG, "Failed to write CCCD descript- or, error: %d", ret);
+            return ret;
+        }
+    }
+
+    return 0;
+}
+
+int disc_chrs(uint16_t conn_handle, const struct ble_gatt_error *error, const struct ble_gatt_chr *characteristic, void* arg)
 {
     if (has_found_all_chrs)
     {
@@ -71,9 +115,7 @@ int disc_chrs(uint16_t conn_handle, const struct ble_gatt_error *error, const st
     }
     ESP_LOGI(TAG, "Characteristic UUID: %x", characteristic->uuid.u16.value);
 
-    static bool has_device_id_chr = false;
-    static bool has_temp_data_chr = false;
-    static bool has_commands_chr = false;
+  
 
     if (error->status != 0)
     {
@@ -95,16 +137,25 @@ int disc_chrs(uint16_t conn_handle, const struct ble_gatt_error *error, const st
         hub_device->temp_data_char_handle = characteristic->val_handle;
         ESP_LOGI(TAG, "AFTER TEMP DATA CHAR");
     }
-    // else if (characteristic->uuid.u16.value == HUB_COMMANDS_CHAR_UUID)
-    // {
-    //     ESP_LOGI(TAG, "IN COMMANDS CHAR");
-    //     has_commands_chr = true;
-    //     hub_device->commands_char_handle = characteristic->val_handle;
-    //     ESP_LOGI(TAG, "AFTER COMMANDS CHAR");
-    // }
+    // Check if this is the characteristic we are interested in
+    ESP_LOGW(TAG, "Characteristic UUID: %x", characteristic->uuid.u16.value);
+    if (characteristic->uuid.u16.value == 0x9ABC)
+    {
+        ESP_LOGI(TAG, "Found LED characteristic, discovering descriptors...");
+        has_led_chr = true;
+        hub_device->led_char_handle = characteristic->val_handle;
+        // Now, discover descriptors for this characteristic to find the CCCD
+        //MAYBE HERE
+        int ret = ble_gattc_disc_all_dscs(conn_handle, characteristic->val_handle, characteristic->val_handle, disc_dscs, NULL);
+        if (ret != 0)
+        {
+            ESP_LOGE(TAG, "Descriptor discovery failed: %d", ret);
+            return ret;
+        }
+    }
 
-    ESP_LOGW(TAG, "has_temp_data_chr: %d, has_device_id_chr: %d, has_commands_chr: %d", has_temp_data_chr, has_device_id_chr, has_commands_chr);
-    if (has_temp_data_chr && has_device_id_chr)
+    ESP_LOGW(TAG, "has_temp_data_chr: %d, has_device_id_chr: %d, has_led_chr: %d", has_temp_data_chr, has_device_id_chr, has_led_chr);
+    if (has_temp_data_chr && has_device_id_chr && has_led_chr)
     {
         ESP_LOGI(TAG, "Characteristic discovery completed");
         has_found_all_chrs = true;
@@ -164,6 +215,18 @@ void write_cb(uint16_t conn_handle, const struct ble_gatt_error *error, struct b
     }
 }
 
+void sub_cb(uint16_t conn_handle, const struct ble_gatt_error *error, struct ble_gatt_attr *attr, void *arg)
+{
+    if (error->status == 0)
+    {
+        ESP_LOGI(TAG, "Subscribed to notifications for char handle: %d", attr->handle);
+    }
+    else
+    {
+        ESP_LOGE(TAG, "Failed to subscribe to notifications, error: %d", error->status);
+    }
+}
+
 int send_device_id_to_hub()
 {
     if (hub_device->device_id_char_handle != 0)
@@ -178,8 +241,8 @@ int send_device_id_to_hub()
             return -1;
         }
 
-        ESP_LOGI(TAG, "Sending Bluetooth MAC: %02x:%02x:%02x:%02x:%02x:%02x", 
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        ESP_LOGI(TAG, "Sending Bluetooth MAC: %02x:%02x:%02x:%02x:%02x:%02x",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
         // send raw mac to hub
         int ret = ble_gattc_write_flat(hub_device->conn_handle, hub_device->device_id_char_handle,
