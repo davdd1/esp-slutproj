@@ -15,6 +15,7 @@ extern bool has_wifi_init;
 extern bool has_wifi_connected;
 extern wifi_config_t wifi_config;
 
+void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
 void wifi_init();
 void set_wifi_ssid(const char* ssid);
 void set_wifi_password(const char* password);

@@ -9,11 +9,14 @@ void app_main(void)
     // Initialize the queue for sending data
     init_queue();
 
+    xTaskCreate(ble_wifi_init, "ble_wifi_init", 4096, NULL, 5, NULL);
+    
+    vTaskDelay(pdMS_TO_TICKS(500)); // Delay between BLE and WiFi init to allow things to stabilize.
     // Start the queue processing task
     xTaskCreate(process_queue_task, "process_queue_task", 4096, NULL, 2, NULL);
 
+
     // Initialize BLE and WiFi
-    ble_wifi_init();
 
     while (1)
     {

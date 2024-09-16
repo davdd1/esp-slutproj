@@ -1,128 +1,111 @@
 #include "hub_server_comm.h"
 #include "ble_task.h"
 #include "hub_ble_gatt.h"
+#include "wifi_task.h"
 
-static const char* TAG = "HUB-TCP";
-static int sock = -1;  // Persistent socket for communication
+static const char *TAG = "HUB-TCP";
+char led_command_buffer[64] = "White"; // Buffer for the LED command, default value is "LED:0,0,0"
 
 // Initialize a TCP connection to the server
-static bool connect_to_server() {
-    struct sockaddr_in server_addr;
-
-    if (sock != -1) {
-        // Socket already exists, check if it's still valid
-        return true;
-    }
-
-    sock = socket(AF_INET, SOCK_STREAM, 0);
+static int connect_to_server() {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
-        ESP_LOGE(TAG, "Socket creation failed");
-        return false;
+        ESP_LOGE(TAG, "Failed to create socket");
+        return -1;
     }
 
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(SERVER_PORT);
+    struct sockaddr_in server_addr = {
+        .sin_family = AF_INET,
+        .sin_port = htons(SERVER_PORT),
+    };
+
     if (inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr) <= 0) {
-        ESP_LOGE(TAG, "Invalid address / not supported");
+        ESP_LOGE(TAG, "Invalid server address");
         close(sock);
-        sock = -1;
-        return false;
+        return -1;
     }
 
-    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        ESP_LOGE(TAG, "Connection to server failed");
+    if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        ESP_LOGE(TAG, "Failed to connect to server");
         close(sock);
-        sock = -1;
-        return false;
+        return -1;
     }
 
-    ESP_LOGI(TAG, "Connected to server: %s:%d", SERVER_IP, SERVER_PORT);
-    return true;
+    return sock;
 }
 
-// Read data (Led command) from the the GO server
-void read_led_command_from_server() {
-    if (!connect_to_server()) {
-        ESP_LOGE(TAG, "Failed to connect to server");
-        return;
+bool connect_to_server_with_retries(int retries, int delay_ms, int *sock) {
+    for (int i = 0; i < retries; i++) {
+        *sock = connect_to_server();
+        if (*sock != -1) {
+            return true;
+        }
+        ESP_LOGW(TAG, "Retrying connection... (%d/%d)", i + 1, retries);
+        vTaskDelay(delay_ms / portTICK_PERIOD_MS);
     }
+    ESP_LOGE(TAG, "Failed to connect to server after %d retries", retries);
+    return false;
+}
 
-    char recv_buffer[64];
-    int len = recv(sock, recv_buffer, sizeof(recv_buffer) - 1, 0);
-    if (len > 0) {
-        recv_buffer[len] = 0;  // Null-terminate received data
-        ESP_LOGI(TAG, "Received command from server: %s", recv_buffer);
+// Read data (LED command) from the GO server
+void read_led_command_from_server() {
+    int sock;
+    if (ble_gap_conn_handle != BLE_HS_CONN_HANDLE_NONE && has_wifi_connected) {
+        if (!connect_to_server_with_retries(5, 1000, &sock)) {
+            ESP_LOGE(TAG, "Failed to connect to server");
+            return;
+        }
         
-        //notify the ble client with the command
-        notify_led_command(recv_buffer);
-    } else if (len == 0) {
-        ESP_LOGE(TAG, "Server closed the connection");
-        close(sock);
-        sock = -1;
-    } else {
-        ESP_LOGE(TAG, "Failed to receive data");
-        close(sock);
-        sock = -1;
+        char recv_buffer[64];
+        int len = recv(sock, recv_buffer, sizeof(recv_buffer) - 1, 0);
+        if (len > 0) {
+            recv_buffer[len] = 0; // Null-terminate received data
+            ESP_LOGI(TAG, "Received command from server: %s", recv_buffer);
+            strncpy(led_command_buffer, recv_buffer, sizeof(led_command_buffer) - 1);
+            led_command_buffer[sizeof(led_command_buffer) - 1] = '\0'; // Null-terminate the buffer
+        } else if (len == 0) {
+            //ESP_LOGE(TAG, "Server closed the connection");
+        } else {
+            ESP_LOGE(TAG, "Failed to receive data");
+        }
+
+        close(sock); // Close the socket after use
     }
 }
 
 // Send data to the server
-void send_to_server(int prefix, const char* data) {
-    if (!connect_to_server()) {
+void send_to_server(int prefix, const char *data) {
+    int sock = connect_to_server();
+    if (sock == -1) {
         ESP_LOGE(TAG, "Failed to connect to server");
         return;
     }
 
-    // Prepare the message with the prefix
     char message[256];
     int msg_len = snprintf(message, sizeof(message), "%d%s", prefix, data);
 
-    // Send the message
     int bytes_sent = send(sock, message, msg_len, 0);
     if (bytes_sent < 0) {
-        ESP_LOGE(TAG, "Failed to send data, attempting to reconnect...");
-        close(sock);
-        sock = -1;
-
-        // Try to reconnect and resend the data
-        if (!connect_to_server()) {
-            ESP_LOGE(TAG, "Reconnection failed");
-            return;
-        }
-
-        bytes_sent = send(sock, message, msg_len, 0);
-        if (bytes_sent < 0) {
-            ESP_LOGE(TAG, "Failed to send data after reconnection");
-            close(sock);
-            sock = -1;
-            return;
-        }
-    }
-
-    ESP_LOGI(TAG, "Data sent: %s", message);
-
-    // Receive response from the server (optional)
-    char recv_buffer[128];
-    int len = recv(sock, recv_buffer, sizeof(recv_buffer) - 1, 0);
-    if (len > 0) {
-        recv_buffer[len] = 0;  // Null-terminate received data
-        ESP_LOGI(TAG, "Received from server: %s", recv_buffer);
-    } else if (len == 0) {
-        ESP_LOGE(TAG, "Server closed the connection");
-        close(sock);
-        sock = -1;
+        ESP_LOGE(TAG, "Failed to send data");
     } else {
-        ESP_LOGE(TAG, "Failed to receive data");
-        close(sock);
-        sock = -1;
-    }
-}
+        ESP_LOGI(TAG, "Data sent: %s", message);
 
-// Close the persistent connection when needed
-void close_connection() {
-    if (sock != -1) {
-        close(sock);
-        sock = -1;
-        ESP_LOGI(TAG, "Connection closed");
+        char recv_buffer[128];
+        int len = recv(sock, recv_buffer, sizeof(recv_buffer) - 1, 0);
+        if (len > 0) {
+            recv_buffer[len] = 0; // Null-terminate received data
+            ESP_LOGI(TAG, "Received from server: %s", recv_buffer);
+            if (recv_buffer[0] == 'R' || recv_buffer[0] == 'G' || recv_buffer[0] == 'B' || recv_buffer[0] == 'W') {
+                memset(led_command_buffer, 0, sizeof(led_command_buffer));
+                strncpy(led_command_buffer, recv_buffer, sizeof(led_command_buffer) - 1);
+                led_command_buffer[sizeof(led_command_buffer) - 1] = '\0'; // Null-terminate the buffer
+            }
+        } else if (len == 0) {
+            ESP_LOGE(TAG, "Server closed the connection");
+        } else {
+            ESP_LOGE(TAG, "Failed to receive data");
+        }
     }
+
+    close(sock); // Close the socket after use
 }

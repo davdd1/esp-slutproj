@@ -47,7 +47,6 @@ void process_queue_task(void* pvParameters) {
 }
 void enqueue_temperature(const char* temperature) {
     ESP_LOGW(TAG, "Enqueuing temperature data");
-    ESP_LOGW(TAG, "WIFICONNECTED: %d", has_wifi_connected);
     queue_item_t item;
     item.action_type = ACTION_SEND_TEMPERATURE;
     

@@ -63,7 +63,7 @@ File: .\main\ble_task.c
 
 static char *TAG = "BLE Server";
 bool is_connected = false;
-uint16_t ble_gap_conn_handle;
+uint16_t ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 
 int ble_gap_event(struct ble_gap_event *event, void *arg)
 {
@@ -119,6 +119,7 @@ void ble_wifi_init()
         {
             wifi_init();
         }
+            ESP_LOGW(TAG, "Waiting for WiFi credentials...");
         vTaskDelay(1000 / portTICK_PERIOD_MS); // delay 1 sec
     }
 }
@@ -228,7 +229,6 @@ File: .\main\hub_ble_gatt.c
 #include "hub_server_comm.h"
 #include "hub_queue.h"
 
-
 static char *TAG = "BLE HUB";
 
 const struct ble_gatt_svc_def gatt_svcs[] = {
@@ -245,9 +245,8 @@ const struct ble_gatt_svc_def gatt_svcs[] = {
           .access_cb = hub_handle_temperature_data},
          {// Char for LED command
           .uuid = BLE_UUID16_DECLARE(0x9ABC),
-          .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
-          .access_cb = NULL,
-         },
+          .flags = BLE_GATT_CHR_F_READ,
+          .access_cb = hub_handle_led_command},
          {0} // End of characteristics array
      }},
     {.type = BLE_GATT_SVC_TYPE_PRIMARY, .uuid = BLE_UUID16_DECLARE(0x0185), .characteristics = (struct ble_gatt_chr_def[]){
@@ -256,24 +255,32 @@ const struct ble_gatt_svc_def gatt_svcs[] = {
     {0} // End of services array
 };
 
-void notify_led_command(const char* command) {
-    struct os_mbuf* om;
-
-    // Create the notification data (ex: "LED:255,0,0")
-    om = ble_hs_mbuf_from_flat(command, strlen(command));
-    if (om == NULL)
+int hub_handle_led_command(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    if (conn_handle != BLE_HS_CONN_HANDLE_NONE && has_wifi_connected)
     {
-        ESP_LOGE(TAG, "Failed to create mbuf for notification");
-        return;
-    }
 
-    // Notify the connected client
-    int ret = ble_gatts_notify_custom(ble_gap_conn_handle, 0x9ABC, om);
-    if (ret != 0)
-    {
-        ESP_LOGE(TAG, "Failed to notify LED command: %d", ret);
+        ESP_LOGI("BLE_GATT", "LED command characteristic read");
+
+        // // Example LED command value to be sent back to the client
+        // const char *led_command = "LED:255,0,0";
+
+        ESP_LOGI(TAG, "Trying to send LED command to client");
+
+        int rc = os_mbuf_append(ctxt->om, led_command_buffer, strlen(led_command_buffer));
+        ESP_LOGW(TAG, "LED command read by client: %s", led_command_buffer);
+        if (rc != 0)
+        {
+            ESP_LOGE("LED Command", "Failed to send LED command");
+            return BLE_ATT_ERR_INSUFFICIENT_RES;
+        }
+
+        read_led_command_from_server();
+
+        return 0;
     } else {
-        ESP_LOGI(TAG, "Notified LED command: %s", command);
+        ESP_LOGI("LED Command", "Connection invalid!");
+        return -1;
     }
 }
 
@@ -369,7 +376,9 @@ File: .\main\hub_ble_gatt.h
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 
-void notify_led_command(const char *command);
+void dsc_test();
+
+int hub_handle_led_command(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
 
 int hub_handle_device_id(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
 int hub_handle_temperature_data(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
@@ -395,11 +404,14 @@ void app_main(void)
     // Initialize the queue for sending data
     init_queue();
 
+    xTaskCreate(ble_wifi_init, "ble_wifi_init", 4096, NULL, 5, NULL);
+    
+    vTaskDelay(pdMS_TO_TICKS(500)); // Delay between BLE and WiFi init to allow things to stabilize.
     // Start the queue processing task
     xTaskCreate(process_queue_task, "process_queue_task", 4096, NULL, 2, NULL);
 
+
     // Initialize BLE and WiFi
-    ble_wifi_init();
 
     while (1)
     {
@@ -581,36 +593,46 @@ File: .\main\hub_server_comm.c
 #include "hub_server_comm.h"
 #include "ble_task.h"
 #include "hub_ble_gatt.h"
+#include "wifi_task.h"
 
-static const char* TAG = "HUB-TCP";
-static int sock = -1;  // Persistent socket for communication
+static const char *TAG = "HUB-TCP";
+static int sock = -1;                      // Persistent socket for communication
+char led_command_buffer[64] = "LED:0,0,0"; // Buffer for the LED command, default value is "LED:0,0,0"
+//int tcp_connected = 0;  // Initially, not connected
+
 
 // Initialize a TCP connection to the server
 static bool connect_to_server() {
+    ESP_LOGI(TAG, "Attempting to connect to server");
+
     struct sockaddr_in server_addr;
 
+    // Close and reset the socket if it was previously open
     if (sock != -1) {
-        // Socket already exists, check if it's still valid
-        return true;
+        ESP_LOGW(TAG, "Closing existing socket");
+        close(sock);
+        sock = -1;
     }
 
+    // Create a new socket
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
-        ESP_LOGE(TAG, "Socket creation failed");
+        ESP_LOGE(TAG, "Failed to create socket");
         return false;
     }
 
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(SERVER_PORT);
     if (inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr) <= 0) {
-        ESP_LOGE(TAG, "Invalid address / not supported");
+        ESP_LOGE(TAG, "Invalid server address");
         close(sock);
         sock = -1;
         return false;
     }
 
-    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        ESP_LOGE(TAG, "Connection to server failed");
+    // Attempt to connect
+    if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        ESP_LOGE(TAG, "Failed to connect to server");
         close(sock);
         sock = -1;
         return false;
@@ -620,35 +642,64 @@ static bool connect_to_server() {
     return true;
 }
 
-// Read data (Led command) from the the GO server
-void read_led_command_from_server() {
-    if (!connect_to_server()) {
-        ESP_LOGE(TAG, "Failed to connect to server");
-        return;
-    }
 
-    char recv_buffer[64];
-    int len = recv(sock, recv_buffer, sizeof(recv_buffer) - 1, 0);
-    if (len > 0) {
-        recv_buffer[len] = 0;  // Null-terminate received data
-        ESP_LOGI(TAG, "Received command from server: %s", recv_buffer);
-        
-        //notify the ble client with the command
-        notify_led_command(recv_buffer);
-    } else if (len == 0) {
-        ESP_LOGE(TAG, "Server closed the connection");
-        close(sock);
-        sock = -1;
-    } else {
-        ESP_LOGE(TAG, "Failed to receive data");
-        close(sock);
-        sock = -1;
+bool connect_to_server_with_retries(int retries, int delay_ms) {
+    for (int i = 0; i < retries; i++) {
+        if (connect_to_server()) {
+            return true;
+        }
+        ESP_LOGW(TAG, "Retrying connection... (%d/%d)", i + 1, retries);
+        vTaskDelay(delay_ms / portTICK_PERIOD_MS);
+    }
+    ESP_LOGE(TAG, "Failed to connect to server after %d retries", retries);
+    return false;
+}
+// Read data (Led command) from the the GO server
+void read_led_command_from_server()
+{
+    if (ble_gap_conn_handle != BLE_HS_CONN_HANDLE_NONE && has_wifi_connected)
+    {
+
+        ESP_LOGI(TAG, "IN BEGINNING READ LED FUNCCCCCC");
+
+        if (!connect_to_server_with_retries(5, 1000))
+        {
+            ESP_LOGE(TAG, "Failed to connect to server");
+            return;
+        }
+        ESP_LOGI(TAG, "IN READ LED FUNCCCCCC");
+        char recv_buffer[64];
+        int len = recv(sock, recv_buffer, sizeof(recv_buffer) - 1, 0);
+        ESP_LOGI(TAG, "AFTER RECEIVEVEVEVEVEVEVEVEV");
+        if (len > 0)
+        {
+            recv_buffer[len] = 0; // Null-terminate received data
+            ESP_LOGI(TAG, "Received command from server: %s", recv_buffer);
+
+            // store the received command in the global buffer for ble clients
+            strncpy(led_command_buffer, recv_buffer, sizeof(led_command_buffer) - 1);
+            led_command_buffer[sizeof(led_command_buffer) - 1] = 0; // Null-terminate the buffer
+        }
+        else if (len == 0)
+        {
+            ESP_LOGE(TAG, "Server closed the connection");
+            close(sock);
+            sock = -1;
+        }
+        else
+        {
+            ESP_LOGE(TAG, "Failed to receive data");
+            close(sock);
+            sock = -1;
+        }
     }
 }
 
 // Send data to the server
-void send_to_server(int prefix, const char* data) {
-    if (!connect_to_server()) {
+void send_to_server(int prefix, const char *data)
+{
+    if (!connect_to_server())
+    {
         ESP_LOGE(TAG, "Failed to connect to server");
         return;
     }
@@ -659,19 +710,22 @@ void send_to_server(int prefix, const char* data) {
 
     // Send the message
     int bytes_sent = send(sock, message, msg_len, 0);
-    if (bytes_sent < 0) {
+    if (bytes_sent < 0)
+    {
         ESP_LOGE(TAG, "Failed to send data, attempting to reconnect...");
         close(sock);
         sock = -1;
 
         // Try to reconnect and resend the data
-        if (!connect_to_server()) {
+        if (!connect_to_server())
+        {
             ESP_LOGE(TAG, "Reconnection failed");
             return;
         }
 
         bytes_sent = send(sock, message, msg_len, 0);
-        if (bytes_sent < 0) {
+        if (bytes_sent < 0)
+        {
             ESP_LOGE(TAG, "Failed to send data after reconnection");
             close(sock);
             sock = -1;
@@ -684,14 +738,19 @@ void send_to_server(int prefix, const char* data) {
     // Receive response from the server (optional)
     char recv_buffer[128];
     int len = recv(sock, recv_buffer, sizeof(recv_buffer) - 1, 0);
-    if (len > 0) {
-        recv_buffer[len] = 0;  // Null-terminate received data
+    if (len > 0)
+    {
+        recv_buffer[len] = 0; // Null-terminate received data
         ESP_LOGI(TAG, "Received from server: %s", recv_buffer);
-    } else if (len == 0) {
+    }
+    else if (len == 0)
+    {
         ESP_LOGE(TAG, "Server closed the connection");
         close(sock);
         sock = -1;
-    } else {
+    }
+    else
+    {
         ESP_LOGE(TAG, "Failed to receive data");
         close(sock);
         sock = -1;
@@ -699,8 +758,10 @@ void send_to_server(int prefix, const char* data) {
 }
 
 // Close the persistent connection when needed
-void close_connection() {
-    if (sock != -1) {
+void close_connection()
+{
+    if (sock != -1)
+    {
         close(sock);
         sock = -1;
         ESP_LOGI(TAG, "Connection closed");
@@ -715,7 +776,7 @@ File: .\main\hub_server_comm.h
 #ifndef HUB_SERVER_COMM_H
 #define HUB_SERVER_COMM_H
 
-#define SERVER_IP "192.168.0.14" //ändra
+#define SERVER_IP "83.23.160.146" //ändra till dator ip
 #define SERVER_PORT 8080
 
 #define PREFIX_REGISTER 1
@@ -724,6 +785,11 @@ File: .\main\hub_server_comm.h
 
 #include "lwip/sockets.h"
 #include "esp_log.h"
+
+extern char led_command_buffer[64];
+extern int tcp_connected;
+
+bool connect_to_server_with_retries(int retries, int delay_ms);
 
 void read_led_command_from_server();
 
@@ -745,6 +811,8 @@ bool is_pass_set = false;
 bool has_wifi_init = false;
 bool has_wifi_connected = false;
 
+static const char* TAG = "WIFI";
+
 wifi_config_t wifi_config = {
     .sta = {
         .ssid = {0},
@@ -753,6 +821,24 @@ wifi_config_t wifi_config = {
     },
 };
 
+
+// Event handler for WiFi and IP events
+void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();  // Connect when WiFi starts
+        ESP_LOGI(TAG, "WiFi started, attempting to connect...");
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        has_wifi_connected = false;  // Mark as disconnected
+        ESP_LOGI(TAG, "WiFi disconnected, reconnecting...");
+        esp_wifi_connect();  // Reconnect automatically
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        has_wifi_connected = true;  // Mark as connected
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "Subnet mask: " IPSTR, IP2STR(&event->ip_info.netmask));
+        ESP_LOGI(TAG, "Gateway: " IPSTR, IP2STR(&event->ip_info.gw));
+    }
+}
 
 void wifi_init()
 {
@@ -772,8 +858,12 @@ void wifi_init()
 
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
         ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
 
+        //register event handler
+        ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
+        ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL));
+
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
         ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
         ESP_ERROR_CHECK(esp_wifi_start());
 
@@ -781,46 +871,48 @@ void wifi_init()
     }
     else
     {
-        ESP_LOGI("WIFI", "Disconnecting...");
+        ESP_LOGI("WIFI", "Reconnecting with new config...");
         esp_wifi_disconnect();
-        ESP_LOGI("WIFI", "Setting new config...");
         ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
+        ESP_ERROR_CHECK(esp_wifi_connect());
+        has_wifi_connected = false;
     }
+
 
     ESP_LOGI("WIFI", "SSID: %s", wifi_config.sta.ssid);
     ESP_LOGI("WIFI", "Password: %s", wifi_config.sta.password);
 
-    ESP_ERROR_CHECK(esp_wifi_connect());
+//     ESP_ERROR_CHECK(esp_wifi_connect());
 
-    esp_netif_ip_info_t ip_info;
-    int retries = 0;
-    const int max_retries = 10;
+//     esp_netif_ip_info_t ip_info;
+//     int retries = 0;
+//     const int max_retries = 10;
 
-    // wait for connection
-    while (retries < max_retries)
-    {
-        ESP_ERROR_CHECK(esp_netif_get_ip_info(netif, &ip_info));
-        if (ip_info.ip.addr != 0)
-        {
-            ESP_LOGI("WIFI", "IP Address: " IPSTR, IP2STR(&ip_info.ip));
-            ESP_LOGI("WIFI", "Subnet mask: " IPSTR, IP2STR(&ip_info.netmask));
-            ESP_LOGI("WIFI", "Gateway: " IPSTR, IP2STR(&ip_info.gw));
-            is_ssid_set = false;
-            is_pass_set = false;
-            has_wifi_connected = true;
-            ESP_LOGE("WIFI", "WIFI CONNECTED: %d", has_wifi_connected);
-            break;
-        }
-        ESP_LOGI("WIFI", "Waiting for IP... %d", retries);
-        vTaskDelay(pdMS_TO_TICKS(1000)); // wait 1 sec
-        retries++;
-    }
+//     // wait for connection
+//     while (retries < max_retries)
+//     {
+//         ESP_ERROR_CHECK(esp_netif_get_ip_info(netif, &ip_info));
+//         if (ip_info.ip.addr != 0)
+//         {
+//             ESP_LOGI("WIFI", "IP Address: " IPSTR, IP2STR(&ip_info.ip));
+//             ESP_LOGI("WIFI", "Subnet mask: " IPSTR, IP2STR(&ip_info.netmask));
+//             ESP_LOGI("WIFI", "Gateway: " IPSTR, IP2STR(&ip_info.gw));
+//             is_ssid_set = false;
+//             is_pass_set = false;
+//             //has_wifi_connected = true;
+//             ESP_LOGE("WIFI", "WIFI CONNECTED: %d", has_wifi_connected);
+//             break;
+//         }
+//         ESP_LOGI("WIFI", "Waiting for IP... %d", retries);
+//         vTaskDelay(pdMS_TO_TICKS(1000)); // wait 1 sec
+//         retries++;
+//     }
 
-    if (retries >= max_retries)
-    {
-        ESP_LOGE("WIFI", "Failed to connect to AP after %d retries", max_retries);
-    }
-    // LOGGA
+//     if (retries >= max_retries)
+//     {
+//         ESP_LOGE("WIFI", "Failed to connect to AP after %d retries", max_retries);
+//     }
+//     // LOGGA
 }
 
 void set_wifi_ssid(const char *ssid)

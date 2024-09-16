@@ -57,10 +57,17 @@ void ble_wifi_init()
     nimble_port_freertos_init(host_task);            // Run the thread
     while (1)
     {
-        if (is_ssid_set && is_pass_set)
+        if (is_ssid_set && is_pass_set && !has_wifi_init)
         {
+            ESP_LOGI(TAG, "WiFi credentials set. Starting WiFi...");
             wifi_init();
         }
-        vTaskDelay(1000 / portTICK_PERIOD_MS); // delay 1 sec
+
+        // check if wifi is connected
+        if (!has_wifi_connected)
+        {
+            ESP_LOGW(TAG, "Waiting for WiFi credentials...");
+        }
+        vTaskDelay(3000 / portTICK_PERIOD_MS); // delay 1 sec
     }
 }
