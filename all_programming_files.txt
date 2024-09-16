@@ -1,0 +1,262 @@
+
+
+================================================================================
+File: .\collect_files.py
+================================================================================
+
+import os
+import argparse
+
+def main():
+    parser = argparse.ArgumentParser(description='Concatenate all programming files into a single text file.')
+    parser.add_argument('-d', '--directory', default='.', help='Root directory to scan')
+    parser.add_argument('-o', '--output', default='all_programming_files.txt', help='Output file name')
+    parser.add_argument('-e', '--extensions', nargs='+', help='List of file extensions to include', default=[
+        '.py', '.java', '.c', '.cpp', '.h', '.js', '.rb', '.php', '.go', '.cs', '.swift', '.kt',
+        '.html', '.css', '.ts', '.sql', '.json', '.xml', '.sh', '.pl', '.r', '.m', '.erl', '.ex',
+        '.exs', '.scala', '.lhs', '.hs', '.ml', '.fs', '.fsx'
+    ])
+    parser.add_argument('-x', '--exclude', nargs='+', help='List of file extensions to exclude', default=[])
+
+    args = parser.parse_args()
+
+    programming_extensions = args.extensions
+    exclude_extensions = args.exclude
+    output_file = args.output
+    root_dir = args.directory
+
+    # Define directories to ignore
+    ignore_dirs = {'.vscode', '.devcontainer', 'build'}
+
+    with open(output_file, 'w', encoding='utf-8') as outfile:
+        for dirpath, dirnames, filenames in os.walk(root_dir):
+            # Modify dirnames in-place to skip ignored directories
+            dirnames[:] = [d for d in dirnames if d not in ignore_dirs]
+
+            for filename in filenames:
+                # Check if file has an allowed extension and is not in the exclude list
+                if (any(filename.endswith(ext) for ext in programming_extensions) and
+                    not any(filename.endswith(ext) for ext in exclude_extensions)):
+                    file_path = os.path.join(dirpath, filename)
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as infile:
+                            content = infile.read()
+                        outfile.write(f"\n\n{'='*80}\n")
+                        outfile.write(f"File: {file_path}\n")
+                        outfile.write(f"{'='*80}\n\n")
+                        outfile.write(content)
+                    except Exception as e:
+                        print(f"Error reading {file_path}: {e}")
+
+if __name__ == '__main__':
+    main()
+
+
+================================================================================
+File: .\cmd\main.go
+================================================================================
+
+package main
+
+import ( 
+	"fmt"
+	"go-server/internal"
+)
+
+func main() {
+	// Start tcp-server
+	fmt.Println("Starting TCP server...")
+	internal.StartServer("0.0.0.0:8080") 
+}
+
+================================================================================
+File: .\internal\device.go
+================================================================================
+
+package internal
+
+import (
+	"sync"
+)
+
+type Device struct {
+	ID          string
+	Status      string
+	Temperature string
+}
+
+var devices = make(map[string]*Device)
+var mu sync.Mutex // Mutex to protect concurrent access to the devices map
+
+// RegisterDevice adds a new device to the devices map if it doesn't already exist.
+func RegisterDevice(id string) {
+	mu.Lock()
+	defer mu.Unlock()
+	if _, exists := devices[id]; !exists {
+		devices[id] = &Device{ID: id, Status: "Connected"}
+	}
+}
+
+//Check if MAC address is already registered
+func IsKnownDevice(id string) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	_, exists := devices[id]
+	return exists
+}
+
+// UpdateDeviceTemperature updates the temperature of a device in the devices map.
+func UpdateDeviceTemperature(id string, temp string) {
+	mu.Lock()
+	defer mu.Unlock()
+	if device, exists := devices[id]; exists {
+		device.Temperature = temp
+	}
+}
+
+// UnregisterDevice removes a device from the devices map. Currently unused in
+func UnregisterDevice(id string) {
+	mu.Lock()
+	defer mu.Unlock()
+	delete(devices, id)
+}
+
+// GetDevice returns a device from the devices map based on the provided ID.
+func GetDevice(id string) *Device {
+	mu.Lock()
+	defer mu.Unlock()
+	return devices[id]
+}
+
+
+================================================================================
+File: .\internal\device_test.go
+================================================================================
+
+package internal
+
+import (
+	"testing"
+)
+
+func TestRegisterDevice(t *testing.T) {
+	RegisterDevice("00:11:22:33:44:55")
+	device := GetDevice("00:11:22:33:44:55")
+	if device == nil {
+		t.Fatalf("Device not found")
+	}
+	if device.Status != "Connected" {
+		t.Fatalf("Expected status 'Connected', got '%s'", device.Status)
+	}
+}
+
+func TestUnregisterDevice(t *testing.T) {
+	RegisterDevice("00:11:22:33:44:55")
+	UnregisterDevice("00:11:22:33:44:55")
+	device := GetDevice("00:11:22:33:44:55")
+	if device != nil {
+		t.Fatalf("Expected device to be nil")
+	}
+}
+
+
+================================================================================
+File: .\internal\server.go
+================================================================================
+
+package internal
+
+import (
+	"fmt"
+	"net"
+	"time"
+)
+
+const timeoutDuration = 500 * time.Second // Set a timeout of 5 seconds for reading/writing
+
+// StartServer starts a TCP server and listens on the provided address.
+func StartServer(address string) {
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		fmt.Println("\033[31m[✘] Error starting server:\033[0m", err) // Red for errors
+		return
+	}
+	defer listener.Close()
+
+	fmt.Println("\033[32m[✔] Server listening on\033[0m", address) // Green for successful server start
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Println("\033[31m[✘] Error accepting connection:\033[0m", err) // Red for connection errors
+			continue
+		}
+		go handleConnection(conn)
+	}
+}
+
+// handleConnection handles the incoming connection and processes messages.
+func handleConnection(conn net.Conn) {
+	defer conn.Close()
+	buffer := make([]byte, 1024)
+
+	for {
+		fmt.Println("\033[33m[~] Waiting for data from client...\033[0m") // Yellow for waiting
+
+		// Set a read deadline (timeout) for the connection
+		conn.SetReadDeadline(time.Now().Add(timeoutDuration))
+
+		n, err := conn.Read(buffer)
+		if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				fmt.Println("\033[31m[✘] Read timeout, closing connection.\033[0m") // Red for timeout errors
+			} else {
+				fmt.Println("\033[31m[✘] Connection closed or error:\033[0m", err) // Red for generic connection errors
+			}
+			return
+		}
+
+		message := string(buffer[:n])
+
+		if len(message) > 0 {
+			switch message[0] {
+			case '1':
+				macAddress := message[1:]
+				fmt.Println("\033[36m[↓] Received:\033[0m " + message + "\n\033[36m[ℹ] Handling MAC address!") // Cyan for info
+				handleMACAddress(macAddress, conn)
+			case '2':
+				temperature := message[1:]
+				fmt.Println("\033[36m[↓] Received:\033[0m " + message + "\n\033[36m[ℹ] Handling temperature!") // Cyan for info
+				handleTemperature(temperature)
+			// case '4': // Keep-alive message (if implemented)
+			// 	fmt.Println("\033[36m[ℹ] Received keep-alive message\033[0m")
+			default:
+				fmt.Println("\033[31m[✘] Unknown message type\033[0m") // Red for unknown types
+			}
+		} else {
+			fmt.Println("\033[33m[!] Empty message received.\033[0m") // Yellow for empty messages
+		}
+
+		fmt.Println("\033[32m[↑] Sending acknowledgment to client...\033[0m") // Green for acknowledgment
+		conn.Write([]byte("Acknowledged: " + message))
+	}
+}
+
+// handleMACAddress processes the MAC address message from the client.
+func handleMACAddress(mac string, conn net.Conn) {
+	if IsKnownDevice(mac) {
+		// Send WELCOME BACK message for known devices
+		fmt.Println("\033[34m[✔] Known device!:\033[0m", mac) // Blue for known devices
+		conn.Write([]byte("Welcome back! Device: " + mac + "\n")) // Send welcome back message
+	} else {
+		// Register the new device and send a welcome message
+		RegisterDevice(mac)
+		fmt.Println("\033[32m[✔] New device!:\033[0m", mac) // Green for new devices
+		conn.Write([]byte("Welcome! Device: " + mac + "\n")) // Send welcome message
+	}
+}
+
+// handleTemperature processes the temperature message from the client.
+func handleTemperature(temp string) {
+	fmt.Println("\033[35m[ℹ] Processing temperature:\033[0m", temp+" °C") // Magenta for temperature
+}
