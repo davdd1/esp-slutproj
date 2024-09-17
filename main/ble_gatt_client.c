@@ -35,7 +35,7 @@ void led_task(void* pvParameters) {
         vTaskDelay(3000 / portTICK_PERIOD_MS);
     }
 
-    ESP_LOGI(TAG, "Service disc complete. LED task started");
+    ESP_LOGI(TAG, "Service discovery complete. LED task started");
 
     while (1) {
         ESP_LOGI("LED_Task", "Listening for LED commands");
@@ -57,11 +57,8 @@ void device_task(void *pvParameters)
 {
     while (!has_found_all_chrs)
     {
-        ESP_LOGI("DEVICE_TASK", "Wait for service discovery to complete");
         vTaskDelay(3000 / portTICK_PERIOD_MS);
     }
-
-    ESP_LOGI(TAG, "Service disc complete. Device task started");
 
     while (1)
     {
@@ -94,13 +91,14 @@ int disc_chrs(uint16_t conn_handle, const struct ble_gatt_error *error, const st
         ESP_LOGE(TAG, "Characteristic is NULL");
         return -1; // error
     }
-    ESP_LOGI(TAG, "Characteristic UUID: %x", characteristic->uuid.u16.value);
 
     if (error->status != 0)
     {
         ESP_LOGE(TAG, "Characteristic discovery failed: %d", error->status);
         return 0;
     }
+
+    ESP_LOGI(TAG, "Characteristic UUID: %x", characteristic->uuid.u16.value);
 
     if (characteristic->uuid.u16.value == HUB_DEVICE_ID_CHAR_UUID)
     {
@@ -112,14 +110,13 @@ int disc_chrs(uint16_t conn_handle, const struct ble_gatt_error *error, const st
         has_temp_data_chr = true;
         hub_device->temp_data_char_handle = characteristic->val_handle;
     }
-    if (characteristic->uuid.u16.value == HUB_LED_CHAR_UUID)
+    else if (characteristic->uuid.u16.value == HUB_LED_CHAR_UUID)
     {
-        ESP_LOGI(TAG, "Found LED characteristic!");
         has_led_chr = true;
         hub_device->led_char_handle = characteristic->val_handle;
-        ESP_LOGI(TAG, "AFTER LED CHAR");
     }
 
+    // Check if all characteristics have been found and log
     ESP_LOGW(TAG, "has_temp_data_chr: %d, has_device_id_chr: %d, has_led_chr: %d", has_temp_data_chr, has_device_id_chr, has_led_chr);
     if (has_temp_data_chr && has_device_id_chr && has_led_chr)
     {
@@ -151,7 +148,6 @@ int disc_svcs(uint16_t conn_handle, const struct ble_gatt_error *error, const st
         has_found_svc = true;
         ESP_LOGI(TAG, "Service found, discovering characteristics...");
         hub_device->service_uuid = service->uuid.u16.value;
-        ESP_LOGI(TAG, "Trying to connect to service: %x...", service->uuid.u16.value);
         int ret = ble_gattc_disc_all_chrs(conn_handle, service->start_handle, service->end_handle, disc_chrs, NULL);
         if (ret != 0)
         {
@@ -181,6 +177,7 @@ void write_cb(uint16_t conn_handle, const struct ble_gatt_error *error, struct b
     }
 }
 
+// Callback function for reading LED command from hub and setting the LED color
 void read_cb(uint16_t conn_handle, const struct ble_gatt_error *error, struct ble_gatt_attr *attr, void *arg)
 {
     if (error->status == 0)
@@ -239,6 +236,7 @@ int read_led_command_from_hub() {
     return 0;
 }
 
+// send device id(mac addr) to hub
 int send_device_id_to_hub()
 {
     if (hub_device->device_id_char_handle != 0)
@@ -289,7 +287,7 @@ int send_temp_data_to_hub(float sensor_temperature)
     return -1;
 }
 
-// write to hub
+// check prefix and write to hub
 int send_data_handler(int prefix, float sensor_temperature)
 {
 
@@ -311,7 +309,6 @@ int send_data_handler(int prefix, float sensor_temperature)
     case PREFIX_SENSOR_DATA:
         // send temperature data
         return send_temp_data_to_hub(sensor_temperature);
-    // maybe command later
     default:
         ESP_LOGE(TAG, "Invalid prefix: %d", prefix);
         return -1;

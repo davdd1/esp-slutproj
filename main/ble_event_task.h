@@ -18,8 +18,8 @@
 
 extern uint8_t ble_addr_type;
 
-void start_sensor_task();
-void stop_sensor_task();
+void start_tasks();
+void stop_tasks();
 
 int ble_gap_event(struct ble_gap_event *event, void *arg);
 void ble_scan(void);
