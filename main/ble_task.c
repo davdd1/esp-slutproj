@@ -19,6 +19,7 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
         {
             ESP_LOGE(TAG, "Connection error: %d", event->connect.status);
         } else {
+            // set global var and connection handle
             is_connected = true;
             ble_gap_conn_handle = event->connect.conn_handle;
         }
@@ -27,6 +28,7 @@ int ble_gap_event(struct ble_gap_event *event, void *arg)
         break;
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "DEVICE DISCONNECTED. RESTARTING ADVERTISING");
+        // set global var and connection handle back to default
         is_connected = false;
         ble_gap_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         ble_app_advertise();

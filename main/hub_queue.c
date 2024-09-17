@@ -37,8 +37,6 @@ void process_queue_task(void* pvParameters) {
                     ESP_LOGE(TAG, "Unknown action type: %d", item.action_type);
                     break;
             }
-            //Maybe close connection here
-            // close_connection();
     }
         } else {
             vTaskDelay(100 / portTICK_PERIOD_MS);  // Wait for a second before checking again
@@ -50,7 +48,7 @@ void enqueue_temperature(const char* temperature) {
     queue_item_t item;
     item.action_type = ACTION_SEND_TEMPERATURE;
     
-    // Copy temperature data to item (strncpy ensures no buffer overflow)
+    // Copy temperature data to item
     strncpy(item.data.temperature, temperature, sizeof(item.data.temperature) - 1);
     item.data.temperature[sizeof(item.data.temperature) - 1] = '\0'; // Null-terminate
 

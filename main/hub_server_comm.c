@@ -95,11 +95,6 @@ void send_to_server(int prefix, const char *data) {
         if (len > 0) {
             recv_buffer[len] = 0; // Null-terminate received data
             ESP_LOGI(TAG, "Received from server: %s", recv_buffer);
-            if (recv_buffer[0] == 'R' || recv_buffer[0] == 'G' || recv_buffer[0] == 'B' || recv_buffer[0] == 'W') {
-                memset(led_command_buffer, 0, sizeof(led_command_buffer));
-                strncpy(led_command_buffer, recv_buffer, sizeof(led_command_buffer) - 1);
-                led_command_buffer[sizeof(led_command_buffer) - 1] = '\0'; // Null-terminate the buffer
-            }
         } else if (len == 0) {
             ESP_LOGE(TAG, "Server closed the connection");
         } else {

@@ -24,9 +24,20 @@ const struct ble_gatt_svc_def gatt_svcs[] = {
           .access_cb = hub_handle_led_command},
          {0} // End of characteristics array
      }},
-    {.type = BLE_GATT_SVC_TYPE_PRIMARY, .uuid = BLE_UUID16_DECLARE(0x0185), .characteristics = (struct ble_gatt_chr_def[]){
-                                                                                {.uuid = BLE_UUID16_DECLARE(0x4321), .flags = BLE_GATT_CHR_F_WRITE, .access_cb = hub_handle_wifi_ssid_write}, {.uuid = BLE_UUID16_DECLARE(0x8765), .flags = BLE_GATT_CHR_F_WRITE, .access_cb = hub_handle_wifi_password_write}, {0} // End of characteristics array
-                                                                            }},
+     // Service for wifi credentials
+    {.type = BLE_GATT_SVC_TYPE_PRIMARY, 
+     .uuid = BLE_UUID16_DECLARE(0x0185), 
+     .characteristics = (struct ble_gatt_chr_def[]){
+         {
+          .uuid = BLE_UUID16_DECLARE(0x4321), 
+          .flags = BLE_GATT_CHR_F_WRITE, 
+          .access_cb = hub_handle_wifi_ssid_write}, 
+         {
+          .uuid = BLE_UUID16_DECLARE(0x8765), 
+          .flags = BLE_GATT_CHR_F_WRITE, 
+          .access_cb = hub_handle_wifi_password_write}, 
+         {0} // End of characteristics array   
+    }},
     {0} // End of services array
 };
 
@@ -74,7 +85,6 @@ int hub_handle_device_id(uint16_t conn_handle, uint16_t attr_handle, struct ble_
             ESP_LOGE("Device ID", "Invalid MAC address length received: %d", ctxt->om->om_len);
         }
     }
-    //memset(ctxt->om->om_data, 0, ctxt->om->om_len); // Clear the buffer
     return 0;
 }
 
@@ -87,14 +97,13 @@ int hub_handle_temperature_data(uint16_t conn_handle, uint16_t attr_handle, stru
     }
 
     if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR)
-    { // clear the buffer
+    {
         char temp[ctxt->om->om_len + 1];
         memcpy(temp, ctxt->om->om_data, ctxt->om->om_len);
         temp[ctxt->om->om_len] = '\0'; // Lägg till null-terminator
         enqueue_temperature(temp); // Add to queue
     }
 
-    //memset(ctxt->om->om_data, 0, ctxt->om->om_len);
     return 0;
 }
 

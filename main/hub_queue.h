@@ -8,8 +8,6 @@
 
 #define QUEUE_LENGTH 30
 
-
-
 typedef enum {
     ACTION_SEND_TEMPERATURE,
     ACTION_SEND_MAC_ADDRESS
